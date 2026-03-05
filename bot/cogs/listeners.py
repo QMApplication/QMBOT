@@ -189,9 +189,6 @@ class Listeners(commands.Cog):
             except Exception as e:
                 print(f"[XP] update_xp failed: {type(e).__name__}: {e}")
 
-        # Always process commands
-        await self.bot.process_commands(message)
-
     # -------------------------
     # AFK command
     # -------------------------
