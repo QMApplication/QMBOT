@@ -1,7 +1,7 @@
-# bot/main.py
+# main.py
 import discord
 from discord.ext import commands
-from bot.config import TOKEN
+from config import TOKEN
 
 INTENTS = discord.Intents.default()
 INTENTS.message_content = True
@@ -10,20 +10,34 @@ INTENTS.members = True
 
 class QMULBot(commands.Bot):
     async def setup_hook(self):
-        # Load cogs
+        """
+        Load all cogs here.
+        You’ll create these files under ./cogs/ next.
+        """
         extensions = [
-            "bot.cogs.listeners",
-            "bot.cogs.economy",
-            "bot.cogs.trivia",
-            "bot.cogs.marriage",
-            "bot.cogs.games",
-            "bot.cogs.admin",
-            "bot.cogs.mc",
-            "bot.cogs.coverbot",
-            "bot.cogs.tasks",
+            # listeners first so on_message works
+            "cogs.listeners",
+
+            # core features (you’ll add these as you split)
+            "cogs.economy",
+            "cogs.trivia",
+            "cogs.games",
+            "cogs.marriage",
+            "cogs.admin",
+            "cogs.mc",
+            "cogs.coverbot",
+
+            # background tasks last
+            "cogs.tasks",
         ]
+
         for ext in extensions:
-            await self.load_extension(ext)
+            try:
+                await self.load_extension(ext)
+                print(f"[Cog] Loaded {ext}")
+            except Exception as e:
+                # Don’t crash on missing cogs while you’re migrating
+                print(f"[Cog] Skipped {ext}: {type(e).__name__}: {e}")
 
 bot = QMULBot(command_prefix="!", intents=INTENTS)
 
