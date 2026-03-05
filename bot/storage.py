@@ -1,42 +1,54 @@
-# bot/storage.py
-import json, os
+# storage.py
+import json
+from pathlib import Path
 from typing import Any
+from config import DATA_DIR
 
-DATA_FILE = "data.json"
-COOLDOWN_FILE = "cooldowns.json"
-COIN_DATA_FILE = "coins.json"
-SHOP_FILE = "shop_stock.json"
-INVENTORY_FILE = "inventories.json"
-MARRIAGE_FILE = "marriages.json"
-QUEST_FILE = "quests.json"
-EVENT_FILE = "events.json"
-STOCK_FILE = "stocks.json"
-SUGGESTION_FILE = "suggestions.json"
-TRIVIA_STATS_FILE = "trivia_stats.json"
-TRIVIA_STREAKS_FILE = "trivia_streaks.json"
-BEG_STATS_FILE = "beg_stats.json"
-SWEAR_JAR_FILE = "swear_jar.json"
-STICKER_FILE = "sticker.json"
+# Ensure data directory exists (Railway-friendly)
+DATA_PATH = Path(DATA_DIR)
+DATA_PATH.mkdir(parents=True, exist_ok=True)
 
-def _load_json(path: str, default: Any):
-    if not os.path.exists(path):
+# File paths (all stored under DATA_DIR)
+DATA_FILE = DATA_PATH / "data.json"
+COOLDOWN_FILE = DATA_PATH / "cooldowns.json"
+COIN_DATA_FILE = DATA_PATH / "coins.json"
+SHOP_FILE = DATA_PATH / "shop_stock.json"
+INVENTORY_FILE = DATA_PATH / "inventories.json"
+MARRIAGE_FILE = DATA_PATH / "marriages.json"
+PLAYLIST_FILE = DATA_PATH / "playlists.json"
+QUEST_FILE = DATA_PATH / "quests.json"
+EVENT_FILE = DATA_PATH / "events.json"
+STOCK_FILE = DATA_PATH / "stocks.json"
+SUGGESTION_FILE = DATA_PATH / "suggestions.json"
+TRIVIA_STATS_FILE = DATA_PATH / "trivia_stats.json"
+TRIVIA_STREAKS_FILE = DATA_PATH / "trivia_streaks.json"
+BEG_STATS_FILE = DATA_PATH / "beg_stats.json"
+SWEAR_JAR_FILE = DATA_PATH / "swear_jar.json"
+STICKER_FILE = DATA_PATH / "sticker.json"
+
+def _load_json(path: Path, default: Any):
+    if not path.exists():
         return default
     try:
-        with open(path, "r") as f:
-            return json.load(f)
-    except json.JSONDecodeError:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
         return default
 
-def _save_json(path: str, obj: Any):
-    with open(path, "w") as f:
-        json.dump(obj, f, indent=4)
+def _save_json(path: Path, obj: Any):
+    path.write_text(json.dumps(obj, indent=4), encoding="utf-8")
 
-# Thin wrappers (keep names matching your current code)
+# ---- wrappers (same names as your monolith) ----
 def load_data(): return _load_json(DATA_FILE, {})
 def save_data(d): _save_json(DATA_FILE, d)
 
+def load_cooldowns(): return _load_json(COOLDOWN_FILE, {})
+def save_cooldowns(d): _save_json(COOLDOWN_FILE, d)
+
 def load_coins(): return _load_json(COIN_DATA_FILE, {})
 def save_coins(d): _save_json(COIN_DATA_FILE, d)
+
+def load_marriages(): return _load_json(MARRIAGE_FILE, {})
+def save_marriages(d): _save_json(MARRIAGE_FILE, d)
 
 def load_shop_stock(): return _load_json(SHOP_FILE, {})
 def save_shop_stock(d): _save_json(SHOP_FILE, d)
@@ -44,8 +56,8 @@ def save_shop_stock(d): _save_json(SHOP_FILE, d)
 def load_inventory(): return _load_json(INVENTORY_FILE, {})
 def save_inventory(d): _save_json(INVENTORY_FILE, d)
 
-def load_marriages(): return _load_json(MARRIAGE_FILE, {})
-def save_marriages(d): _save_json(MARRIAGE_FILE, d)
+def load_playlists(): return _load_json(PLAYLIST_FILE, {})
+def save_playlists(d): _save_json(PLAYLIST_FILE, d)
 
 def load_quests(): return _load_json(QUEST_FILE, {})
 def save_quests(d): _save_json(QUEST_FILE, d)
@@ -68,8 +80,31 @@ def save_trivia_streaks(d): _save_json(TRIVIA_STREAKS_FILE, d)
 def load_beg_stats(): return _load_json(BEG_STATS_FILE, {})
 def save_beg_stats(d): _save_json(BEG_STATS_FILE, d)
 
-def load_swear_jar(): return _load_json(SWEAR_JAR_FILE, {"total": 0, "users": {}})
+def load_swear_jar():
+    jar = _load_json(SWEAR_JAR_FILE, {"total": 0, "users": {}})
+    if not isinstance(jar, dict):
+        jar = {"total": 0, "users": {}}
+    jar.setdefault("total", 0)
+    jar.setdefault("users", {})
+    jar["total"] = int(jar.get("total", 0) or 0)
+    if not isinstance(jar["users"], dict):
+        jar["users"] = {}
+    return jar
+
 def save_swear_jar(d): _save_json(SWEAR_JAR_FILE, d)
 
-def load_stickers(): return _load_json(STICKER_FILE, {"total": 0, "users": {}, "daily": {}})
+def load_stickers():
+    d = _load_json(STICKER_FILE, {"total": 0, "users": {}, "daily": {}})
+    if not isinstance(d, dict):
+        d = {"total": 0, "users": {}, "daily": {}}
+    d.setdefault("total", 0)
+    d.setdefault("users", {})
+    d.setdefault("daily", {})
+    d["total"] = int(d.get("total", 0) or 0)
+    if not isinstance(d["users"], dict):
+        d["users"] = {}
+    if not isinstance(d["daily"], dict):
+        d["daily"] = {}
+    return d
+
 def save_stickers(d): _save_json(STICKER_FILE, d)
