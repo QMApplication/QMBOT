@@ -14,8 +14,12 @@ from config import (
 )
 
 
-def ensure_user(user_id):
-    coins = load_coins()
+# -------------------------
+# USER INITIALISATION
+# -------------------------
+
+def ensure_user(coins, user_id):
+
     uid = str(user_id)
 
     if uid not in coins:
@@ -27,9 +31,8 @@ def ensure_user(user_id):
             "last_rob": 0,
             "last_bankrob": 0
         }
-        save_coins(coins)
 
-    return coins
+    return coins[uid]
 
 
 class Economy(commands.Cog):
@@ -37,17 +40,22 @@ class Economy(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+
     # -------------------------
     # BALANCE
     # -------------------------
 
-    @commands.command(name="balance")
+    @commands.hybrid_command(
+        name="balance",
+        description="Check your balance."
+    )
     async def balance(self, ctx, member: discord.Member = None):
+
+        coins = load_coins()
 
         member = member or ctx.author
 
-        coins = ensure_user(member.id)
-        user = coins[str(member.id)]
+        user = ensure_user(coins, member.id)
 
         embed = discord.Embed(
             title=f"💰 {member.display_name}'s Balance",
@@ -59,21 +67,29 @@ class Economy(commands.Cog):
 
         await ctx.send(embed=embed)
 
+
     # -------------------------
     # DEPOSIT
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="deposit",
+        description="Deposit coins into your bank."
+    )
     async def deposit(self, ctx, amount: str):
 
-        coins = ensure_user(ctx.author.id)
-        user = coins[str(ctx.author.id)]
+        coins = load_coins()
 
-        if amount == "all":
+        user = ensure_user(coins, ctx.author.id)
+
+        if amount.lower() == "all":
             amount = user["wallet"]
+
         else:
+
             if not amount.isdigit():
                 return await ctx.send("Invalid amount.")
+
             amount = int(amount)
 
         if amount <= 0 or amount > user["wallet"]:
@@ -86,21 +102,29 @@ class Economy(commands.Cog):
 
         await ctx.send(f"🏦 Deposited **{amount}** coins.")
 
+
     # -------------------------
     # WITHDRAW
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="withdraw",
+        description="Withdraw coins from your bank."
+    )
     async def withdraw(self, ctx, amount: str):
 
-        coins = ensure_user(ctx.author.id)
-        user = coins[str(ctx.author.id)]
+        coins = load_coins()
 
-        if amount == "all":
+        user = ensure_user(coins, ctx.author.id)
+
+        if amount.lower() == "all":
             amount = user["bank"]
+
         else:
+
             if not amount.isdigit():
                 return await ctx.send("Invalid amount.")
+
             amount = int(amount)
 
         if amount <= 0 or amount > user["bank"]:
@@ -113,15 +137,20 @@ class Economy(commands.Cog):
 
         await ctx.send(f"💰 Withdrew **{amount}** coins.")
 
+
     # -------------------------
     # DAILY
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="daily",
+        description="Claim your daily coins."
+    )
     async def daily(self, ctx):
 
-        coins = ensure_user(ctx.author.id)
-        user = coins[str(ctx.author.id)]
+        coins = load_coins()
+
+        user = ensure_user(coins, ctx.author.id)
 
         now = datetime.now(timezone.utc)
 
@@ -134,6 +163,7 @@ class Economy(commands.Cog):
             )
 
             remaining = tomorrow - now
+
             seconds = int(remaining.total_seconds())
 
             h = seconds // 3600
@@ -151,21 +181,27 @@ class Economy(commands.Cog):
 
         await ctx.send(f"🎁 You received **{reward}** coins!")
 
+
     # -------------------------
     # BEG
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="beg",
+        description="Beg for some coins."
+    )
     async def beg(self, ctx):
 
-        coins = ensure_user(ctx.author.id)
-        user = coins[str(ctx.author.id)]
+        coins = load_coins()
+
+        user = ensure_user(coins, ctx.author.id)
 
         now = time.time()
 
         if now - user["last_beg"] < 30:
 
             remaining = int(30 - (now - user["last_beg"]))
+
             return await ctx.send(f"⏳ Wait **{remaining}s**")
 
         amount = random.randint(10, 30)
@@ -177,56 +213,32 @@ class Economy(commands.Cog):
 
         await ctx.send(f"Someone gave you **{amount}** coins.")
 
-    # -------------------------
-    # BEG LEADERBOARD
-    # -------------------------
-
-    @commands.command()
-    async def begleaderboard(self, ctx):
-
-        coins = load_coins()
-
-        sorted_users = sorted(
-            coins.items(),
-            key=lambda x: x[1].get("last_beg", 0),
-            reverse=True
-        )
-
-        desc = ""
-
-        for i, (uid, data) in enumerate(sorted_users[:10], 1):
-
-            user = await self.bot.fetch_user(int(uid))
-
-            desc += f"{i}. {user.name}\n"
-
-        embed = discord.Embed(
-            title="🥇 Beg Leaderboard",
-            description=desc
-        )
-
-        await ctx.send(embed=embed)
 
     # -------------------------
     # PAY
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="pay",
+        description="Send coins to another user."
+    )
     async def pay(self, ctx, member: discord.Member, amount: int):
+
+        if member.bot:
+            return await ctx.send("You can't pay bots.")
 
         if amount <= 0:
             return await ctx.send("Invalid amount.")
 
-        coins = ensure_user(ctx.author.id)
-        user = coins[str(ctx.author.id)]
+        coins = load_coins()
 
-        if user["wallet"] < amount:
+        sender = ensure_user(coins, ctx.author.id)
+        target = ensure_user(coins, member.id)
+
+        if sender["wallet"] < amount:
             return await ctx.send("Not enough coins.")
 
-        coins = ensure_user(member.id)
-        target = coins[str(member.id)]
-
-        user["wallet"] -= amount
+        sender["wallet"] -= amount
         target["wallet"] += amount
 
         save_coins(coins)
@@ -235,21 +247,27 @@ class Economy(commands.Cog):
             f"💸 {ctx.author.mention} paid {member.mention} **{amount}** coins."
         )
 
+
     # -------------------------
     # ROB
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="rob",
+        description="Attempt to rob another user."
+    )
     async def rob(self, ctx, member: discord.Member):
 
         if member == ctx.author:
             return await ctx.send("You can't rob yourself.")
 
-        coins = ensure_user(ctx.author.id)
-        robber = coins[str(ctx.author.id)]
+        if member.bot:
+            return await ctx.send("You can't rob bots.")
 
-        coins = ensure_user(member.id)
-        victim = coins[str(member.id)]
+        coins = load_coins()
+
+        robber = ensure_user(coins, ctx.author.id)
+        victim = ensure_user(coins, member.id)
 
         if victim["wallet"] <= 0:
             return await ctx.send("They have nothing.")
@@ -277,21 +295,24 @@ class Economy(commands.Cog):
 
         await ctx.send(msg)
 
+
     # -------------------------
     # BANK ROB
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="bankrob",
+        description="Attempt to rob someone's bank."
+    )
     async def bankrob(self, ctx, member: discord.Member):
 
         if member.id == ctx.author.id:
             return await ctx.send("You can't rob yourself.")
 
-        coins = ensure_user(ctx.author.id)
-        robber = coins[str(ctx.author.id)]
+        coins = load_coins()
 
-        coins = ensure_user(member.id)
-        victim = coins[str(member.id)]
+        robber = ensure_user(coins, ctx.author.id)
+        victim = ensure_user(coins, member.id)
 
         bank = victim["bank"]
 
@@ -313,11 +334,15 @@ class Economy(commands.Cog):
 
         await ctx.send(f"🏦 You robbed **{amount}** bank coins!")
 
+
     # -------------------------
     # BALANCE LEADERBOARD
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="baltop",
+        description="Show the richest users."
+    )
     async def baltop(self, ctx):
 
         coins = load_coins()
@@ -325,7 +350,9 @@ class Economy(commands.Cog):
         leaderboard = []
 
         for uid, data in coins.items():
+
             total = data.get("wallet", 0) + data.get("bank", 0)
+
             leaderboard.append((uid, total))
 
         leaderboard.sort(key=lambda x: x[1], reverse=True)
@@ -334,9 +361,14 @@ class Economy(commands.Cog):
 
         for i, (uid, total) in enumerate(leaderboard[:10], 1):
 
-            user = await self.bot.fetch_user(int(uid))
+            member = ctx.guild.get_member(int(uid))
 
-            desc += f"{i}. {user.name} — {total}\n"
+            if member:
+                name = member.display_name
+            else:
+                name = f"User {uid}"
+
+            desc += f"{i}. {name} — {total}\n"
 
         embed = discord.Embed(
             title="🏆 Richest Players",
