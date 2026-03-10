@@ -1,4 +1,3 @@
-# cogs/marriage.py
 import random
 import discord
 from discord.ext import commands
@@ -7,6 +6,7 @@ from storage import load_marriages, save_marriages
 
 # target_id -> proposer_id
 MARRIAGE_PROPOSALS: dict[str, str] = {}
+
 
 class Marriage(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -41,6 +41,7 @@ class Marriage(commands.Cog):
     async def accept(self, ctx: commands.Context):
         user_id = str(ctx.author.id)
         proposer_id = MARRIAGE_PROPOSALS.get(user_id)
+
         if not proposer_id:
             return await ctx.send("❌ You don't have any pending proposals.")
 
@@ -55,10 +56,15 @@ class Marriage(commands.Cog):
         marriages[user_id] = proposer_id
         save_marriages(marriages)
 
-        proposer = await self.bot.fetch_user(int(proposer_id))
-        await ctx.send(f"💞 {ctx.author.mention} and {proposer.mention} are now married! 🎉")
+        try:
+            proposer = await self.bot.fetch_user(int(proposer_id))
+            proposer_mention = proposer.mention
+        except Exception:
+            proposer_mention = f"<@{proposer_id}>"
 
-        del MARRIAGE_PROPOSALS[user_id]
+        await ctx.send(f"💞 {ctx.author.mention} and {proposer_mention} are now married! 🎉")
+
+        MARRIAGE_PROPOSALS.pop(user_id, None)
 
     @commands.command(name="divorce", help="Divorce your current partner 😢")
     async def divorce(self, ctx: commands.Context):
@@ -73,8 +79,13 @@ class Marriage(commands.Cog):
         marriages.pop(partner_id, None)
         save_marriages(marriages)
 
-        partner = await self.bot.fetch_user(int(partner_id))
-        await ctx.send(f"💔 {ctx.author.mention} and {partner.mention} are now divorced.")
+        try:
+            partner = await self.bot.fetch_user(int(partner_id))
+            partner_mention = partner.mention
+        except Exception:
+            partner_mention = f"<@{partner_id}>"
+
+        await ctx.send(f"💔 {ctx.author.mention} and {partner_mention} are now divorced.")
 
     @commands.command(name="partner", help="View your or someone else's partner 💘")
     async def partner(self, ctx: commands.Context, member: discord.Member = None):
@@ -85,8 +96,13 @@ class Marriage(commands.Cog):
         if not partner_id:
             return await ctx.send(f"{member.display_name} is not married.")
 
-        partner_user = await self.bot.fetch_user(int(partner_id))
-        await ctx.send(f"💗 {member.display_name}'s partner is **{partner_user.display_name}**.")
+        try:
+            partner_user = await self.bot.fetch_user(int(partner_id))
+            partner_name = partner_user.display_name
+        except Exception:
+            partner_name = "Unknown User"
+
+        await ctx.send(f"💗 {member.display_name}'s partner is **{partner_name}**.")
 
     @commands.command(name="flirt", help="Flirt with someone using a cute compliment 😘")
     async def flirt(self, ctx: commands.Context, member: discord.Member):
@@ -102,7 +118,9 @@ class Marriage(commands.Cog):
             "You’re the reason the server’s uptime just improved.",
             "I’d share my last health potion with you. 💖",
         ]
+
         await ctx.send(f"{ctx.author.mention} flirts with {member.mention}:\n> {random.choice(lines)}")
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Marriage(bot))
