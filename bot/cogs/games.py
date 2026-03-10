@@ -1,207 +1,230 @@
-import asyncio
-import random
-
 import discord
 from discord.ext import commands
+import random
 
-from config import GAMBLE_FEE_FLAT, GAMBLE_TIMEOUT_RAKE_RATE
 from storage import load_coins, save_coins
 
 
-def ensure_user_coins(user_id):
-    user_id = str(user_id)
+def ensure_user(user_id):
     coins = load_coins()
+    uid = str(user_id)
 
-    if user_id not in coins:
-        coins[user_id] = {
+    if uid not in coins:
+        coins[uid] = {
             "wallet": 100,
-            "bank": 0,
-            "last_daily": 0,
-            "last_rob": 0,
-            "last_beg": 0,
-            "last_bankrob": 0,
-            "portfolio": {},
-            "pending_portfolio": [],
-            "trade_meta": {
-                "last_trade_ts": {},
-                "daily": {"day": "", "count": 0}
-            }
+            "bank": 0
         }
         save_coins(coins)
-    else:
-        user = coins[user_id]
-        changed = False
-
-        defaults = {
-            "wallet": 100,
-            "bank": 0,
-            "last_daily": 0,
-            "last_rob": 0,
-            "last_beg": 0,
-            "last_bankrob": 0,
-            "portfolio": {},
-            "pending_portfolio": [],
-            "trade_meta": {
-                "last_trade_ts": {},
-                "daily": {"day": "", "count": 0}
-            }
-        }
-
-        for key, value in defaults.items():
-            if key not in user:
-                user[key] = value
-                changed = True
-
-        if changed:
-            save_coins(coins)
 
     return coins
 
 
+# active blackjack sessions
+BLACKJACK_GAMES = {}
+
+
+def draw_card():
+    cards = [2,3,4,5,6,7,8,9,10,10,10,10,11]
+    return random.choice(cards)
+
+
+def hand_value(hand):
+
+    total = sum(hand)
+
+    while total > 21 and 11 in hand:
+        hand[hand.index(11)] = 1
+        total = sum(hand)
+
+    return total
+
+
 class Games(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+
+    def __init__(self, bot):
         self.bot = bot
 
     # -------------------------
-    # Gamble
+    # COINFLIP
     # -------------------------
-    @commands.hybrid_command(
-        name="gamble",
-        description="Gamble coins on red or black."
-    )
-    async def gamble(self, ctx: commands.Context, amount: str):
-        uid = str(ctx.author.id)
 
-        coins = ensure_user_coins(uid)
-        user = coins[uid]
+    @commands.command()
+    async def coinflip(self, ctx):
 
-        wallet = int(user.get("wallet", 0))
-
-        if amount.lower() == "all":
-            bet = wallet - GAMBLE_FEE_FLAT
-        else:
-            if not amount.isdigit():
-                return await ctx.send("❌ Invalid bet.")
-            bet = int(amount)
-
-        if bet <= 0:
-            return await ctx.send("❌ Invalid bet.")
-
-        fee = GAMBLE_FEE_FLAT
-
-        if wallet < bet + fee:
-            return await ctx.send(
-                f"💸 You need **{bet + fee}** coins (bet **{bet}** + fee **{fee}**)."
-            )
-
-        # charge fee immediately
-        user["wallet"] -= fee
-        save_coins(coins)
-
-        result = random.choice(["red", "black"])
-
-        embed = discord.Embed(
-            title="🎰 Place Your Bet!",
-            description=(
-                f"Bet: **{bet}** coins\n"
-                f"Fee paid: **{fee}** coins\n\n"
-                "React:\n"
-                "🟥 = Red\n"
-                "⬛ = Black\n\n"
-                "You have **5 seconds**."
-            ),
-            color=discord.Color.gold()
-        )
-
-        message = await ctx.send(embed=embed)
-
-        try:
-            await message.add_reaction("🟥")
-            await message.add_reaction("⬛")
-        except discord.HTTPException:
-            pass
-
-        def check(reaction: discord.Reaction, user2: discord.User):
-            return (
-                user2.id == ctx.author.id
-                and reaction.message.id == message.id
-                and str(reaction.emoji) in ("🟥", "⬛")
-            )
-
-        try:
-            reaction, _ = await self.bot.wait_for(
-                "reaction_add",
-                timeout=5,
-                check=check
-            )
-        except asyncio.TimeoutError:
-            rake = int(bet * GAMBLE_TIMEOUT_RAKE_RATE)
-
-            coins = ensure_user_coins(uid)
-            user = coins[uid]
-
-            taken = min(int(user.get("wallet", 0)), rake)
-            user["wallet"] -= taken
-            save_coins(coins)
-
-            return await ctx.send(
-                f"⏰ You didn't react in time.\n"
-                f"💸 Lost **{taken}** coins."
-            )
-
-        choice = "red" if str(reaction.emoji) == "🟥" else "black"
-
-        coins = ensure_user_coins(uid)
-        user = coins[uid]
-
-        if int(user.get("wallet", 0)) < bet:
-            return await ctx.send("⚠️ Not enough coins anymore.")
-
-        user["wallet"] -= bet
-
-        if choice == result:
-            winnings = bet * 2
-            user["wallet"] += winnings
-
-            msg = discord.Embed(
-                title="🎉 You Win!",
-                description=(
-                    f"The wheel landed on **{result.upper()}**!\n"
-                    f"You won **{winnings}** coins!"
-                ),
-                color=discord.Color.green()
-            )
-        else:
-            msg = discord.Embed(
-                title="😢 You Lose!",
-                description=(
-                    f"The wheel landed on **{result.upper()}**.\n"
-                    f"You lost **{bet}** coins."
-                ),
-                color=discord.Color.red()
-            )
-
-        save_coins(coins)
-        await ctx.send(embed=msg)
-
-    # -------------------------
-    # Coinflip
-    # -------------------------
-    @commands.hybrid_command(
-        name="coinflip",
-        description="Flip a coin."
-    )
-    async def coinflip(self, ctx: commands.Context):
         result = random.choice(["Heads", "Tails"])
 
         embed = discord.Embed(
             title="🪙 Coin Flip",
-            description=f"The coin landed on **{result}**!",
+            description=f"The coin landed on **{result}**",
             color=discord.Color.blue()
         )
 
         await ctx.send(embed=embed)
 
+    # -------------------------
+    # GAMBLE
+    # -------------------------
 
-async def setup(bot: commands.Bot):
+    @commands.command()
+    async def gamble(self, ctx, amount: int):
+
+        coins = ensure_user(ctx.author.id)
+        user = coins[str(ctx.author.id)]
+
+        if amount <= 0 or user["wallet"] < amount:
+            return await ctx.send("Invalid bet.")
+
+        user["wallet"] -= amount
+
+        win = random.choice([True, False])
+
+        if win:
+
+            winnings = amount * 2
+            user["wallet"] += winnings
+
+            msg = f"🎉 You won **{winnings}** coins!"
+
+        else:
+
+            msg = f"💀 You lost **{amount}** coins."
+
+        save_coins(coins)
+
+        await ctx.send(msg)
+
+    # -------------------------
+    # BLACKJACK START
+    # -------------------------
+
+    @commands.command()
+    async def blackjack(self, ctx, bet: int):
+
+        uid = str(ctx.author.id)
+
+        coins = ensure_user(uid)
+        user = coins[uid]
+
+        if bet <= 0:
+            return await ctx.send("Invalid bet.")
+
+        if user["wallet"] < bet:
+            return await ctx.send("Not enough coins.")
+
+        if uid in BLACKJACK_GAMES:
+            return await ctx.send("You already have a game running.")
+
+        player = [draw_card(), draw_card()]
+        dealer = [draw_card(), draw_card()]
+
+        user["wallet"] -= bet
+        save_coins(coins)
+
+        BLACKJACK_GAMES[uid] = {
+            "player": player,
+            "dealer": dealer,
+            "bet": bet
+        }
+
+        embed = discord.Embed(
+            title="🃏 Blackjack",
+            description=(
+                f"Your hand: {player} (**{hand_value(player)}**)\n"
+                f"Dealer: [{dealer[0]}, ?]\n\n"
+                "Use `!hit` or `!stand`"
+            )
+        )
+
+        await ctx.send(embed=embed)
+
+    # -------------------------
+    # HIT
+    # -------------------------
+
+    @commands.command()
+    async def hit(self, ctx):
+
+        uid = str(ctx.author.id)
+
+        if uid not in BLACKJACK_GAMES:
+            return await ctx.send("No blackjack game running.")
+
+        game = BLACKJACK_GAMES[uid]
+
+        game["player"].append(draw_card())
+
+        value = hand_value(game["player"])
+
+        if value > 21:
+
+            del BLACKJACK_GAMES[uid]
+
+            return await ctx.send(
+                f"💥 Bust! Your hand: {game['player']} (**{value}**)"
+            )
+
+        await ctx.send(
+            f"Your hand: {game['player']} (**{value}**)"
+        )
+
+    # -------------------------
+    # STAND
+    # -------------------------
+
+    @commands.command()
+    async def stand(self, ctx):
+
+        uid = str(ctx.author.id)
+
+        if uid not in BLACKJACK_GAMES:
+            return await ctx.send("No blackjack game running.")
+
+        game = BLACKJACK_GAMES[uid]
+
+        player_val = hand_value(game["player"])
+        dealer = game["dealer"]
+
+        while hand_value(dealer) < 17:
+            dealer.append(draw_card())
+
+        dealer_val = hand_value(dealer)
+
+        coins = ensure_user(uid)
+        user = coins[uid]
+
+        bet = game["bet"]
+
+        if dealer_val > 21 or player_val > dealer_val:
+
+            winnings = bet * 2
+            user["wallet"] += winnings
+
+            msg = f"🎉 You win **{winnings}** coins!"
+
+        elif player_val == dealer_val:
+
+            user["wallet"] += bet
+            msg = "🤝 Push. Bet returned."
+
+        else:
+
+            msg = "💀 Dealer wins."
+
+        save_coins(coins)
+
+        del BLACKJACK_GAMES[uid]
+
+        embed = discord.Embed(
+            title="Blackjack Result",
+            description=(
+                f"Your hand: {game['player']} (**{player_val}**)\n"
+                f"Dealer hand: {dealer} (**{dealer_val}**)\n\n"
+                f"{msg}"
+            )
+        )
+
+        await ctx.send(embed=embed)
+
+
+async def setup(bot):
     await bot.add_cog(Games(bot))
