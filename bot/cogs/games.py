@@ -1,13 +1,11 @@
+import asyncio
+import random
+
 import discord
 from discord.ext import commands
-import random
-import asyncio
 
+from config import GAMBLE_FEE_FLAT, GAMBLE_TIMEOUT_RAKE_RATE
 from storage import load_coins, save_coins
-
-
-GAMBLE_FEE_FLAT = 25
-GAMBLE_TIMEOUT_RAKE_RATE = 0.10
 
 
 def ensure_user_coins(user_id):
@@ -17,38 +15,73 @@ def ensure_user_coins(user_id):
     if user_id not in coins:
         coins[user_id] = {
             "wallet": 100,
-            "bank": 0
+            "bank": 0,
+            "last_daily": 0,
+            "last_rob": 0,
+            "last_beg": 0,
+            "last_bankrob": 0,
+            "portfolio": {},
+            "pending_portfolio": [],
+            "trade_meta": {
+                "last_trade_ts": {},
+                "daily": {"day": "", "count": 0}
+            }
         }
         save_coins(coins)
+    else:
+        user = coins[user_id]
+        changed = False
+
+        defaults = {
+            "wallet": 100,
+            "bank": 0,
+            "last_daily": 0,
+            "last_rob": 0,
+            "last_beg": 0,
+            "last_bankrob": 0,
+            "portfolio": {},
+            "pending_portfolio": [],
+            "trade_meta": {
+                "last_trade_ts": {},
+                "daily": {"day": "", "count": 0}
+            }
+        }
+
+        for key, value in defaults.items():
+            if key not in user:
+                user[key] = value
+                changed = True
+
+        if changed:
+            save_coins(coins)
 
     return coins
 
 
 class Games(commands.Cog):
-
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     # -------------------------
     # Gamble
     # -------------------------
-
-    @commands.command()
-    async def gamble(self, ctx, amount: str):
-
+    @commands.hybrid_command(
+        name="gamble",
+        description="Gamble coins on red or black."
+    )
+    async def gamble(self, ctx: commands.Context, amount: str):
         uid = str(ctx.author.id)
 
         coins = ensure_user_coins(uid)
         user = coins[uid]
 
-        wallet = user["wallet"]
+        wallet = int(user.get("wallet", 0))
 
         if amount.lower() == "all":
             bet = wallet - GAMBLE_FEE_FLAT
         else:
             if not amount.isdigit():
                 return await ctx.send("❌ Invalid bet.")
-
             bet = int(amount)
 
         if bet <= 0:
@@ -58,9 +91,10 @@ class Games(commands.Cog):
 
         if wallet < bet + fee:
             return await ctx.send(
-                f"💸 You need **{bet+fee}** coins (bet {bet} + fee {fee})."
+                f"💸 You need **{bet + fee}** coins (bet **{bet}** + fee **{fee}**)."
             )
 
+        # charge fee immediately
         user["wallet"] -= fee
         save_coins(coins)
 
@@ -81,14 +115,17 @@ class Games(commands.Cog):
 
         message = await ctx.send(embed=embed)
 
-        await message.add_reaction("🟥")
-        await message.add_reaction("⬛")
+        try:
+            await message.add_reaction("🟥")
+            await message.add_reaction("⬛")
+        except discord.HTTPException:
+            pass
 
-        def check(reaction, user2):
+        def check(reaction: discord.Reaction, user2: discord.User):
             return (
                 user2.id == ctx.author.id
                 and reaction.message.id == message.id
-                and str(reaction.emoji) in ["🟥", "⬛"]
+                and str(reaction.emoji) in ("🟥", "⬛")
             )
 
         try:
@@ -98,19 +135,18 @@ class Games(commands.Cog):
                 check=check
             )
         except asyncio.TimeoutError:
-
             rake = int(bet * GAMBLE_TIMEOUT_RAKE_RATE)
 
             coins = ensure_user_coins(uid)
             user = coins[uid]
 
-            taken = min(user["wallet"], rake)
+            taken = min(int(user.get("wallet", 0)), rake)
             user["wallet"] -= taken
-
             save_coins(coins)
 
             return await ctx.send(
-                f"⏰ You didn't react.\nLost **{taken}** coins."
+                f"⏰ You didn't react in time.\n"
+                f"💸 Lost **{taken}** coins."
             )
 
         choice = "red" if str(reaction.emoji) == "🟥" else "black"
@@ -118,41 +154,44 @@ class Games(commands.Cog):
         coins = ensure_user_coins(uid)
         user = coins[uid]
 
-        if user["wallet"] < bet:
+        if int(user.get("wallet", 0)) < bet:
             return await ctx.send("⚠️ Not enough coins anymore.")
 
         user["wallet"] -= bet
 
         if choice == result:
-
             winnings = bet * 2
             user["wallet"] += winnings
 
             msg = discord.Embed(
                 title="🎉 You Win!",
-                description=f"The wheel landed on **{result.upper()}**!\nYou won **{winnings}** coins!",
+                description=(
+                    f"The wheel landed on **{result.upper()}**!\n"
+                    f"You won **{winnings}** coins!"
+                ),
                 color=discord.Color.green()
             )
-
         else:
-
             msg = discord.Embed(
                 title="😢 You Lose!",
-                description=f"The wheel landed on **{result.upper()}**.\nYou lost **{bet}** coins.",
+                description=(
+                    f"The wheel landed on **{result.upper()}**.\n"
+                    f"You lost **{bet}** coins."
+                ),
                 color=discord.Color.red()
             )
 
         save_coins(coins)
-
         await ctx.send(embed=msg)
 
     # -------------------------
     # Coinflip
     # -------------------------
-
-    @commands.command()
-    async def coinflip(self, ctx):
-
+    @commands.hybrid_command(
+        name="coinflip",
+        description="Flip a coin."
+    )
+    async def coinflip(self, ctx: commands.Context):
         result = random.choice(["Heads", "Tails"])
 
         embed = discord.Embed(
@@ -164,5 +203,5 @@ class Games(commands.Cog):
         await ctx.send(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(Games(bot))
