@@ -1,9 +1,17 @@
 import time
 import re
+
 import discord
 from discord.ext import commands
 
-from config import XP_PER_MESSAGE, TOP_ROLE_NAME, WELCOME_CHANNEL_ID
+from config import (
+    XP_PER_MESSAGE,
+    TOP_ROLE_NAME,
+    WELCOME_CHANNEL_ID,
+    LEVEL_ANNOUNCE_CHANNEL_ID,
+    SWEAR_FINE_ENABLED,
+    SWEAR_FINE_AMOUNT,
+)
 from storage import (
     load_data,
     save_data,
@@ -21,9 +29,6 @@ AFK_STATUS = {}  # key = f"{guild_id}-{user_id}" -> reason
 # =========================
 # Swear jar
 # =========================
-SWEAR_FINE_ENABLED = True
-SWEAR_FINE_AMOUNT = 10
-
 SWEAR_WORDS = {
     "fuck", "fucking", "shit", "bullshit", "bitch", "asshole", "bastard",
     "dick", "piss", "crap", "damn", "bloody", "wanker", "twat"
@@ -53,18 +58,40 @@ def ensure_user_coins(user_id):
             "last_rob": 0,
             "last_beg": 0,
             "last_bankrob": 0,
+            "portfolio": {},
+            "pending_portfolio": [],
+            "trade_meta": {
+                "last_trade_ts": {},
+                "daily": {"day": "", "count": 0}
+            }
         }
         save_coins(coins)
-
     else:
         data = coins[user_id]
-        data.setdefault("wallet", 100)
-        data.setdefault("bank", 0)
-        data.setdefault("last_daily", 0)
-        data.setdefault("last_rob", 0)
-        data.setdefault("last_beg", 0)
-        data.setdefault("last_bankrob", 0)
-        save_coins(coins)
+        changed = False
+
+        defaults = {
+            "wallet": 100,
+            "bank": 0,
+            "last_daily": 0,
+            "last_rob": 0,
+            "last_beg": 0,
+            "last_bankrob": 0,
+            "portfolio": {},
+            "pending_portfolio": [],
+            "trade_meta": {
+                "last_trade_ts": {},
+                "daily": {"day": "", "count": 0}
+            }
+        }
+
+        for key, value in defaults.items():
+            if key not in data:
+                data[key] = value
+                changed = True
+
+        if changed:
+            save_coins(coins)
 
     return coins
 
@@ -79,7 +106,7 @@ def add_swears(user_id: int, count: int):
 
     jar = load_swear_jar()
     if not isinstance(jar, dict):
-        jar = {}
+        jar = {"total": 0, "users": {}}
 
     jar.setdefault("total", 0)
     jar.setdefault("users", {})
@@ -148,17 +175,19 @@ async def update_xp(bot: commands.Bot, user_id: int, guild_id: int, xp_amount: i
     if not guild:
         return
 
-    # Same milestone announcement logic as original
+    # milestone announcement
     if new_level > prev_level and new_level % 5 == 0:
-        channel = bot.get_channel(1433417692320239666)
+        channel = bot.get_channel(LEVEL_ANNOUNCE_CHANNEL_ID)
         if channel:
             try:
                 user_obj = await bot.fetch_user(user_id)
-                await channel.send(f"🎉 **{user_obj.mention}** just reached level **{new_level}**! 🚀")
+                await channel.send(
+                    f"🎉 **{user_obj.mention}** just reached level **{new_level}**! 🚀"
+                )
             except Exception:
                 pass
 
-    # Same level-role logic as original
+    # level role
     if new_level > prev_level and new_level % 10 == 0:
         role_name = f"Level {new_level}"
         role = discord.utils.get(guild.roles, name=role_name)
@@ -227,7 +256,6 @@ class Listeners(commands.Cog):
                         _LAST_SWEAR_COUNT_AT[message.author.id] = now_ts
                         add_swears(message.author.id, swear_count)
 
-                        # Optional fine, same as original behavior
                         if SWEAR_FINE_ENABLED and SWEAR_FINE_AMOUNT > 0:
                             coins = ensure_user_coins(message.author.id)
                             uid = str(message.author.id)
@@ -291,14 +319,22 @@ class Listeners(commands.Cog):
 
             # XP update
             try:
-                await update_xp(self.bot, message.author.id, message.guild.id, XP_PER_MESSAGE)
+                await update_xp(
+                    self.bot,
+                    message.author.id,
+                    message.guild.id,
+                    XP_PER_MESSAGE
+                )
             except Exception as e:
                 print(f"[XP] update_xp failed: {type(e).__name__}: {e}")
 
     # -------------------------
     # AFK command
     # -------------------------
-    @commands.command(name="afk", help="Set your AFK status with a reason")
+    @commands.hybrid_command(
+        name="afk",
+        description="Set your AFK status with a reason."
+    )
     async def afk(self, ctx: commands.Context, *, reason: str = "AFK"):
         if not ctx.guild:
             return await ctx.send("AFK only works in servers.")
