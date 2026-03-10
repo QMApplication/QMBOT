@@ -1,5 +1,4 @@
 import io
-import random
 import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
@@ -17,71 +16,13 @@ from config import (
     STOCKS,
     PACKAGE_USER_ID,
     PACKAGE_FILES,
+    DEFAULT_STOCK_CONFIG,
+    DIVIDEND_YIELD,
+    MAX_NORMAL_MOVE,
+    MAX_EVENT_MOVE,
+    PRICE_FLOOR,
 )
 from storage import load_coins, save_coins, load_stocks, save_stocks
-
-
-# =========================================================
-# Stock model defaults
-# =========================================================
-# These make each stock feel a bit different while still staying balanced.
-DEFAULT_STOCK_CONFIG = {
-    "Oreobux": {
-        "price": 100,
-        "fair_value": 100.0,
-        "volatility": 0.025,   # low-ish volatility
-        "drift": 0.002,        # gentle long-term upward bias
-        "liquidity": 1400,     # higher = harder to move
-        "history": [100],
-    },
-    "QMkoin": {
-        "price": 150,
-        "fair_value": 150.0,
-        "volatility": 0.035,
-        "drift": 0.003,
-        "liquidity": 1200,
-        "history": [150],
-    },
-    "Seelsterling": {
-        "price": 200,
-        "fair_value": 200.0,
-        "volatility": 0.020,   # the "safer" stock
-        "drift": 0.0015,
-        "liquidity": 1800,
-        "history": [200],
-    },
-    "Fwizfinance": {
-        "price": 250,
-        "fair_value": 250.0,
-        "volatility": 0.050,   # the riskier stock
-        "drift": 0.0035,
-        "liquidity": 900,
-        "history": [250],
-    },
-    "BingBux": {
-        "price": 120,
-        "fair_value": 120.0,
-        "volatility": 0.030,
-        "drift": 0.002,
-        "liquidity": 1300,
-        "history": [120],
-    },
-}
-
-# Dividend flavour: more stable stocks can pay slightly better.
-# Falls back to DIVIDEND_RATE if a stock is missing.
-DIVIDEND_YIELD = {
-    "Oreobux": 0.008,
-    "QMkoin": 0.006,
-    "Seelsterling": 0.010,
-    "Fwizfinance": 0.004,
-    "BingBux": 0.007,
-}
-
-# Safety caps so stocks do not feel absurdly rigged.
-MAX_NORMAL_MOVE = 0.08   # ±8% max normal move per cycle
-MAX_EVENT_MOVE = 0.18    # ±18% max when a rare event happens
-PRICE_FLOOR = 1
 
 
 # =========================================================
@@ -95,17 +36,7 @@ def _today_utc_key() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
-def _human_delta(seconds: int) -> str:
-    seconds = max(0, int(seconds))
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    if h > 0:
-        return f"{h}h {m}m"
-    return f"{m}m"
-
-
 def _data_root() -> Path:
-    # Railway-safe: use storage.DATA_PATH if present, otherwise current directory.
     root = getattr(storage, "DATA_PATH", ".")
     return Path(root)
 
@@ -126,13 +57,6 @@ def _existing_files(paths: list[str]) -> list[str]:
 # Coins / portfolio helpers
 # =========================================================
 def _ensure_stock_fields(user: dict):
-    """
-    Keeps coin records backward-compatible with your original bot.
-
-    portfolio = settled shares
-    pending_portfolio = list of pending lots waiting to settle
-    trade_meta = legacy-compatible tracking structure
-    """
     user.setdefault("portfolio", {s: 0 for s in STOCKS})
     if not isinstance(user.get("portfolio"), dict):
         user["portfolio"] = {s: 0 for s in STOCKS}
@@ -161,10 +85,6 @@ def _ensure_stock_fields(user: dict):
 
 
 def _settle_pending_for_user(user: dict) -> int:
-    """
-    Moves matured pending lots into the settled portfolio.
-    Returns total settled shares.
-    """
     _ensure_stock_fields(user)
     now = _utc_now_ts()
     pending = user.get("pending_portfolio", [])
@@ -186,7 +106,6 @@ def _settle_pending_for_user(user: dict) -> int:
             else:
                 still_pending.append(lot)
         except Exception:
-            # Keep malformed lot instead of silently deleting data
             still_pending.append(lot)
 
     user["pending_portfolio"] = still_pending
@@ -219,9 +138,6 @@ def _default_stock_entry(stock_name: str) -> dict:
 
 
 def _ensure_stock_db() -> dict:
-    """
-    Repairs and normalizes the stock database so older Railway data still works.
-    """
     data = load_stocks()
     if not isinstance(data, dict):
         data = {}
@@ -232,7 +148,6 @@ def _ensure_stock_db() -> dict:
     for stock_name in STOCKS:
         entry = data.get(stock_name)
 
-        # try wrong-cased key recovery
         if entry is None:
             for k, v in data.items():
                 if str(k).lower() == stock_name.lower():
@@ -264,10 +179,13 @@ def _ensure_stock_db() -> dict:
             "volatility": max(0.005, volatility),
             "drift": drift,
             "liquidity": max(1, liquidity),
-            "history": [max(PRICE_FLOOR, int(x)) for x in history[-48:] if isinstance(x, (int, float))] or [price],
+            "history": [
+                max(PRICE_FLOOR, int(x))
+                for x in history[-48:]
+                if isinstance(x, (int, float))
+            ] or [price],
         }
 
-        # detect any missing new fields
         for key in ("fair_value", "volatility", "drift", "liquidity"):
             if key not in entry:
                 changed = True
@@ -293,7 +211,12 @@ async def build_data_zip_bytes() -> tuple[io.BytesIO, list[str]]:
     return buf, included
 
 
-async def dm_package_to_user(bot: commands.Bot, user_id: int, *, reason: str = "Scheduled backup") -> bool:
+async def dm_package_to_user(
+    bot: commands.Bot,
+    user_id: int,
+    *,
+    reason: str = "Scheduled backup"
+) -> bool:
     try:
         user = await bot.fetch_user(int(user_id))
     except Exception as e:
@@ -336,9 +259,6 @@ async def dm_package_to_user(bot: commands.Bot, user_id: int, *, reason: str = "
 class BackgroundTasks(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-
-        # In-memory trade flow. This is optional support for your buy/sell cogs.
-        # If other cogs never call record_trade(), the market still works fine.
         self.market_flow = {s: {"buy": 0, "sell": 0} for s in STOCKS}
 
         self.apply_bank_interest.start()
@@ -354,32 +274,20 @@ class BackgroundTasks(commands.Cog):
         self.settle_all_pending.cancel()
         self.send_backup_zip_every_5h.cancel()
 
-    # -----------------------------------------------------
-    # Optional hook for buy/sell cogs
-    # -----------------------------------------------------
     def record_trade(self, stock_name: str, side: str, qty: int):
-        """
-        Optional helper. Your buy/sell cogs can call this.
-
-        Example:
-            tasks_cog = bot.get_cog("BackgroundTasks")
-            if tasks_cog:
-                tasks_cog.record_trade("QMkoin", "buy", 5)
-        """
         if stock_name not in STOCKS:
             return
         if side not in ("buy", "sell"):
             return
+
         try:
             qty = max(0, int(qty))
         except Exception:
             return
+
         self.market_flow.setdefault(stock_name, {"buy": 0, "sell": 0})
         self.market_flow[stock_name][side] += qty
 
-    # -----------------------------------------------------
-    # Bank interest
-    # -----------------------------------------------------
     @tasks.loop(seconds=INTEREST_INTERVAL)
     async def apply_bank_interest(self):
         try:
@@ -406,9 +314,6 @@ class BackgroundTasks(commands.Cog):
         except Exception as e:
             print(f"[Interest] failed: {type(e).__name__}: {e}")
 
-    # -----------------------------------------------------
-    # Improved stock market
-    # -----------------------------------------------------
     @tasks.loop(minutes=5)
     async def update_stock_prices(self):
         try:
@@ -432,22 +337,14 @@ class BackgroundTasks(commands.Cog):
                 sells = int(flow.get("sell", 0))
                 net_flow = buys - sells
 
-                # Trade pressure is gentle and capped, so whales cannot fully rig it.
                 pressure = max(-0.04, min(0.04, net_flow / liquidity))
-
-                # Mean reversion: prices drift back toward fair value.
-                # This is what makes the market feel less random and more fair.
                 reversion = ((fair_value - current_price) / max(fair_value, 1.0)) * 0.08
-
-                # Ordinary noise
                 noise = random.uniform(-volatility, volatility)
 
-                # Rare event
                 event_move = 0.0
                 event_kind = None
                 roll = random.random()
 
-                # Keep events rare and not insane
                 if roll < 0.015:
                     event_move = -random.uniform(0.08, 0.16)
                     event_kind = "crash"
@@ -456,18 +353,16 @@ class BackgroundTasks(commands.Cog):
                     event_kind = "boom"
 
                 pct_change = drift + reversion + pressure + noise + event_move
-
-                # Cap movement so it feels fair
                 move_cap = MAX_EVENT_MOVE if event_kind else MAX_NORMAL_MOVE
                 pct_change = max(-move_cap, min(move_cap, pct_change))
 
                 new_price = max(PRICE_FLOOR, int(round(current_price * (1 + pct_change))))
 
-                # Fair value itself evolves slowly.
-                # Positive drift means the market gently grows over time,
-                # but we also add a tiny fair-value noise so stocks do not become static.
                 fair_noise = random.uniform(-0.008, 0.012)
-                new_fair_value = max(float(PRICE_FLOOR), fair_value * (1 + drift + fair_noise))
+                new_fair_value = max(
+                    float(PRICE_FLOOR),
+                    fair_value * (1 + drift + fair_noise)
+                )
 
                 stock["price"] = new_price
                 stock["fair_value"] = round(new_fair_value, 2)
@@ -485,7 +380,6 @@ class BackgroundTasks(commands.Cog):
             if changed:
                 save_stocks(stocks)
 
-            # reset cycle flow after applying it
             self.market_flow = {s: {"buy": 0, "sell": 0} for s in STOCKS}
 
             channel = self.bot.get_channel(MARKET_ANNOUNCE_CHANNEL_ID)
@@ -517,9 +411,6 @@ class BackgroundTasks(commands.Cog):
         except Exception as e:
             print(f"[Stocks] update failed: {type(e).__name__}: {e}")
 
-    # -----------------------------------------------------
-    # Dividends
-    # -----------------------------------------------------
     @tasks.loop(seconds=DIVIDEND_INTERVAL)
     async def pay_dividends(self):
         try:
@@ -559,9 +450,6 @@ class BackgroundTasks(commands.Cog):
         except Exception as e:
             print(f"[Dividends] failed: {type(e).__name__}: {e}")
 
-    # -----------------------------------------------------
-    # Pending stock settlement
-    # -----------------------------------------------------
     @tasks.loop(minutes=2)
     async def settle_all_pending(self):
         try:
@@ -582,9 +470,6 @@ class BackgroundTasks(commands.Cog):
         except Exception as e:
             print(f"[Settlement] failed: {type(e).__name__}: {e}")
 
-    # -----------------------------------------------------
-    # Backup loop
-    # -----------------------------------------------------
     @tasks.loop(hours=5)
     async def send_backup_zip_every_5h(self):
         try:
@@ -592,9 +477,6 @@ class BackgroundTasks(commands.Cog):
         except Exception as e:
             print(f"[BackupLoop] failed: {type(e).__name__}: {e}")
 
-    # -----------------------------------------------------
-    # before_loop hooks
-    # -----------------------------------------------------
     @apply_bank_interest.before_loop
     @update_stock_prices.before_loop
     @pay_dividends.before_loop
