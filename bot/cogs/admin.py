@@ -6,21 +6,25 @@ from config import (
     ANNOUNCEMENT_CHANNEL_ID,
     PACKAGE_USER_ID,
 )
+
 from storage import load_suggestions, save_suggestions
 from cogs.tasks import dm_package_to_user
 
 
 class Admin(commands.Cog):
 
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     # -------------------------
     # SUGGEST
     # -------------------------
 
-    @commands.command()
-    async def suggest(self, ctx, *, suggestion: str):
+    @commands.hybrid_command(
+        name="suggest",
+        description="Submit a suggestion for the server."
+    )
+    async def suggest(self, ctx: commands.Context, *, suggestion: str):
 
         channel = self.bot.get_channel(SUGGESTION_CHANNEL_ID)
 
@@ -57,9 +61,12 @@ class Admin(commands.Cog):
     # ANNOUNCEMENT
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="announcement",
+        description="Send a server announcement."
+    )
     @commands.has_permissions(manage_guild=True)
-    async def announcement(self, ctx, *, message: str):
+    async def announcement(self, ctx: commands.Context, *, message: str):
 
         channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
 
@@ -82,8 +89,11 @@ class Admin(commands.Cog):
     # PACKAGE (manual backup)
     # -------------------------
 
-    @commands.command()
-    async def package(self, ctx):
+    @commands.hybrid_command(
+        name="package",
+        description="Send a manual backup of the bot data."
+    )
+    async def package(self, ctx: commands.Context):
 
         if ctx.author.id != PACKAGE_USER_ID:
             return await ctx.send("You are not authorised.")
@@ -98,6 +108,7 @@ class Admin(commands.Cog):
             await ctx.send("Backup sent.")
         else:
             await ctx.send("Backup failed.")
+
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))
