@@ -1,192 +1,605 @@
-# cogs/tasks.py
+import io
 import random
+import zipfile
 from pathlib import Path
 from datetime import datetime, timezone
 
 import discord
 from discord.ext import commands, tasks
 
-import storage  # so we can use storage.DATA_PATH
+import storage
 from config import (
-    INTEREST_INTERVAL, INTEREST_RATE,
-    DIVIDEND_INTERVAL, DIVIDEND_RATE,
+    INTEREST_INTERVAL,
+    INTEREST_RATE,
+    DIVIDEND_INTERVAL,
+    DIVIDEND_RATE,
     MARKET_ANNOUNCE_CHANNEL_ID,
     STOCKS,
     PACKAGE_USER_ID,
     PACKAGE_FILES,
 )
 from storage import load_coins, save_coins, load_stocks, save_stocks
-from utils import build_zip_bytes
 
 
-def _ensure_stock_db():
-    s = load_stocks()
+# =========================================================
+# Stock model defaults
+# =========================================================
+# These make each stock feel a bit different while still staying balanced.
+DEFAULT_STOCK_CONFIG = {
+    "Oreobux": {
+        "price": 100,
+        "fair_value": 100.0,
+        "volatility": 0.025,   # low-ish volatility
+        "drift": 0.002,        # gentle long-term upward bias
+        "liquidity": 1400,     # higher = harder to move
+        "history": [100],
+    },
+    "QMkoin": {
+        "price": 150,
+        "fair_value": 150.0,
+        "volatility": 0.035,
+        "drift": 0.003,
+        "liquidity": 1200,
+        "history": [150],
+    },
+    "Seelsterling": {
+        "price": 200,
+        "fair_value": 200.0,
+        "volatility": 0.020,   # the "safer" stock
+        "drift": 0.0015,
+        "liquidity": 1800,
+        "history": [200],
+    },
+    "Fwizfinance": {
+        "price": 250,
+        "fair_value": 250.0,
+        "volatility": 0.050,   # the riskier stock
+        "drift": 0.0035,
+        "liquidity": 900,
+        "history": [250],
+    },
+    "BingBux": {
+        "price": 120,
+        "fair_value": 120.0,
+        "volatility": 0.030,
+        "drift": 0.002,
+        "liquidity": 1300,
+        "history": [120],
+    },
+}
+
+# Dividend flavour: more stable stocks can pay slightly better.
+# Falls back to DIVIDEND_RATE if a stock is missing.
+DIVIDEND_YIELD = {
+    "Oreobux": 0.008,
+    "QMkoin": 0.006,
+    "Seelsterling": 0.010,
+    "Fwizfinance": 0.004,
+    "BingBux": 0.007,
+}
+
+# Safety caps so stocks do not feel absurdly rigged.
+MAX_NORMAL_MOVE = 0.08   # ±8% max normal move per cycle
+MAX_EVENT_MOVE = 0.18    # ±18% max when a rare event happens
+PRICE_FLOOR = 1
+
+
+# =========================================================
+# Generic helpers
+# =========================================================
+def _utc_now_ts() -> float:
+    return datetime.now(timezone.utc).timestamp()
+
+
+def _today_utc_key() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _human_delta(seconds: int) -> str:
+    seconds = max(0, int(seconds))
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    if h > 0:
+        return f"{h}h {m}m"
+    return f"{m}m"
+
+
+def _data_root() -> Path:
+    # Railway-safe: use storage.DATA_PATH if present, otherwise current directory.
+    root = getattr(storage, "DATA_PATH", ".")
+    return Path(root)
+
+
+def _existing_files(paths: list[str]) -> list[str]:
+    out = []
+    for p in paths:
+        try:
+            pp = Path(p)
+            if pp.exists() and pp.is_file():
+                out.append(str(pp))
+        except Exception:
+            pass
+    return out
+
+
+# =========================================================
+# Coins / portfolio helpers
+# =========================================================
+def _ensure_stock_fields(user: dict):
+    """
+    Keeps coin records backward-compatible with your original bot.
+
+    portfolio = settled shares
+    pending_portfolio = list of pending lots waiting to settle
+    trade_meta = legacy-compatible tracking structure
+    """
+    user.setdefault("portfolio", {s: 0 for s in STOCKS})
+    if not isinstance(user.get("portfolio"), dict):
+        user["portfolio"] = {s: 0 for s in STOCKS}
+    for s in STOCKS:
+        user["portfolio"].setdefault(s, 0)
+
+    user.setdefault("pending_portfolio", [])
+    if not isinstance(user.get("pending_portfolio"), list):
+        user["pending_portfolio"] = []
+
+    user.setdefault("trade_meta", {})
+    tm = user["trade_meta"]
+    if not isinstance(tm, dict):
+        tm = {}
+        user["trade_meta"] = tm
+
+    tm.setdefault("last_trade_ts", {})
+    if not isinstance(tm.get("last_trade_ts"), dict):
+        tm["last_trade_ts"] = {}
+
+    tm.setdefault("daily", {"day": _today_utc_key(), "count": 0})
+    if not isinstance(tm.get("daily"), dict):
+        tm["daily"] = {"day": _today_utc_key(), "count": 0}
+    tm["daily"].setdefault("day", _today_utc_key())
+    tm["daily"].setdefault("count", 0)
+
+
+def _settle_pending_for_user(user: dict) -> int:
+    """
+    Moves matured pending lots into the settled portfolio.
+    Returns total settled shares.
+    """
+    _ensure_stock_fields(user)
+    now = _utc_now_ts()
+    pending = user.get("pending_portfolio", [])
+    if not pending:
+        return 0
+
+    still_pending = []
+    settled_total = 0
+
+    for lot in pending:
+        try:
+            settles_at = float(lot.get("settles_at", 0))
+            stock = lot.get("stock")
+            shares = int(lot.get("shares", 0))
+
+            if settles_at <= now and stock in STOCKS and shares > 0:
+                user["portfolio"][stock] = int(user["portfolio"].get(stock, 0)) + shares
+                settled_total += shares
+            else:
+                still_pending.append(lot)
+        except Exception:
+            # Keep malformed lot instead of silently deleting data
+            still_pending.append(lot)
+
+    user["pending_portfolio"] = still_pending
+    return settled_total
+
+
+# =========================================================
+# Stock DB helpers
+# =========================================================
+def _default_stock_entry(stock_name: str) -> dict:
+    template = DEFAULT_STOCK_CONFIG.get(stock_name)
+    if template:
+        return {
+            "price": int(template["price"]),
+            "fair_value": float(template["fair_value"]),
+            "volatility": float(template["volatility"]),
+            "drift": float(template["drift"]),
+            "liquidity": int(template["liquidity"]),
+            "history": list(template["history"]),
+        }
+
+    return {
+        "price": 100,
+        "fair_value": 100.0,
+        "volatility": 0.03,
+        "drift": 0.002,
+        "liquidity": 1200,
+        "history": [100],
+    }
+
+
+def _ensure_stock_db() -> dict:
+    """
+    Repairs and normalizes the stock database so older Railway data still works.
+    """
+    data = load_stocks()
+    if not isinstance(data, dict):
+        data = {}
+
+    fixed = {}
     changed = False
-    for name in STOCKS:
-        if name not in s or not isinstance(s.get(name), dict):
-            s[name] = {"price": random.randint(80, 250), "history": []}
+
+    for stock_name in STOCKS:
+        entry = data.get(stock_name)
+
+        # try wrong-cased key recovery
+        if entry is None:
+            for k, v in data.items():
+                if str(k).lower() == stock_name.lower():
+                    entry = v
+                    changed = True
+                    break
+
+        if not isinstance(entry, dict):
+            fixed[stock_name] = _default_stock_entry(stock_name)
             changed = True
-        s[name].setdefault("price", random.randint(80, 250))
-        s[name].setdefault("history", [])
-        if not s[name]["history"]:
-            s[name]["history"] = [int(s[name]["price"])]
+            continue
+
+        default = _default_stock_entry(stock_name)
+
+        price = int(entry.get("price", default["price"]) or default["price"])
+        fair_value = float(entry.get("fair_value", price))
+        volatility = float(entry.get("volatility", default["volatility"]))
+        drift = float(entry.get("drift", default["drift"]))
+        liquidity = int(entry.get("liquidity", default["liquidity"]) or default["liquidity"])
+        history = entry.get("history", default["history"])
+
+        if not isinstance(history, list) or not history:
+            history = [price]
             changed = True
+
+        fixed[stock_name] = {
+            "price": max(PRICE_FLOOR, price),
+            "fair_value": max(float(PRICE_FLOOR), fair_value),
+            "volatility": max(0.005, volatility),
+            "drift": drift,
+            "liquidity": max(1, liquidity),
+            "history": [max(PRICE_FLOOR, int(x)) for x in history[-48:] if isinstance(x, (int, float))] or [price],
+        }
+
+        # detect any missing new fields
+        for key in ("fair_value", "volatility", "drift", "liquidity"):
+            if key not in entry:
+                changed = True
+
     if changed:
-        save_stocks(s)
-    return s
+        save_stocks(fixed)
+
+    return fixed
 
 
-async def dm_backup_zip(bot: commands.Bot, user_id: int, reason: str):
+# =========================================================
+# Backup helpers
+# =========================================================
+async def build_data_zip_bytes() -> tuple[io.BytesIO, list[str]]:
+    included = _existing_files([str(_data_root() / f) for f in PACKAGE_FILES])
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in included:
+            zf.write(path, arcname=f"bot_backup/{Path(path).name}")
+
+    buf.seek(0)
+    return buf, included
+
+
+async def dm_package_to_user(bot: commands.Bot, user_id: int, *, reason: str = "Scheduled backup") -> bool:
     try:
         user = await bot.fetch_user(int(user_id))
     except Exception as e:
-        print(f"[Backup] fetch_user failed: {e}")
+        print(f"[Package] Failed to fetch user {user_id}: {e}")
         return False
-
-    # PACKAGE_FILES are base names; our JSON lives under storage.DATA_PATH (DATA_DIR)
-    paths = [str(Path(storage.DATA_PATH) / fname) for fname in PACKAGE_FILES]
-    buf, included = build_zip_bytes(paths, folder_name="bot_backup")
-
-    if not included:
-        try:
-            await user.send(f"⚠️ Backup ({reason}) — no files found.")
-        except Exception:
-            pass
-        return True
-
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S_UTC")
-    file = discord.File(buf, filename=f"qmul_bot_backup_{ts}.zip")
 
     try:
-        await user.send(
-            content=f"📦 **Bot Backup** ({reason})\nIncluded: {', '.join(Path(x).name for x in included)}",
-            file=file
+        zip_buf, included = await build_data_zip_bytes()
+
+        if not included:
+            try:
+                await user.send(f"⚠️ Backup attempt ({reason}) — no files found to package.")
+            except Exception:
+                pass
+            return True
+
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S_UTC")
+        file = discord.File(zip_buf, filename=f"qmul_bot_backup_{ts}.zip")
+
+        msg = (
+            f"📦 **Bot Backup** ({reason})\n"
+            f"Included: {', '.join(Path(x).name for x in included)}"
         )
+
+        await user.send(content=msg, file=file)
+        print(f"[Package] Sent backup zip to {user_id} ({len(included)} files).")
         return True
+
     except discord.Forbidden:
-        print("[Backup] DM forbidden (DMs closed / blocked).")
+        print(f"[Package] DM failed: user {user_id} has DMs closed or bot blocked.")
         return False
     except Exception as e:
-        print(f"[Backup] send failed: {e}")
+        print(f"[Package] Error building/sending zip: {e}")
         return False
 
 
+# =========================================================
+# Background tasks cog
+# =========================================================
 class BackgroundTasks(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-        # Track purchases if you later connect buy/sell cogs into this
-        self.stock_purchase_count = {s: 0 for s in STOCKS}
+        # In-memory trade flow. This is optional support for your buy/sell cogs.
+        # If other cogs never call record_trade(), the market still works fine.
+        self.market_flow = {s: {"buy": 0, "sell": 0} for s in STOCKS}
 
         self.apply_bank_interest.start()
         self.update_stock_prices.start()
         self.pay_dividends.start()
+        self.settle_all_pending.start()
         self.send_backup_zip_every_5h.start()
 
     def cog_unload(self):
         self.apply_bank_interest.cancel()
         self.update_stock_prices.cancel()
         self.pay_dividends.cancel()
+        self.settle_all_pending.cancel()
         self.send_backup_zip_every_5h.cancel()
 
+    # -----------------------------------------------------
+    # Optional hook for buy/sell cogs
+    # -----------------------------------------------------
+    def record_trade(self, stock_name: str, side: str, qty: int):
+        """
+        Optional helper. Your buy/sell cogs can call this.
+
+        Example:
+            tasks_cog = bot.get_cog("BackgroundTasks")
+            if tasks_cog:
+                tasks_cog.record_trade("QMkoin", "buy", 5)
+        """
+        if stock_name not in STOCKS:
+            return
+        if side not in ("buy", "sell"):
+            return
+        try:
+            qty = max(0, int(qty))
+        except Exception:
+            return
+        self.market_flow.setdefault(stock_name, {"buy": 0, "sell": 0})
+        self.market_flow[stock_name][side] += qty
+
+    # -----------------------------------------------------
+    # Bank interest
+    # -----------------------------------------------------
     @tasks.loop(seconds=INTEREST_INTERVAL)
     async def apply_bank_interest(self):
-        coins = load_coins()
-        changed = False
-        for _uid, balances in coins.items():
-            bank = int(balances.get("bank", 0) or 0)
-            if bank > 0:
-                interest = int(bank * INTEREST_RATE)
-                if interest > 0:
-                    balances["bank"] = bank + interest
-                    changed = True
-        if changed:
-            save_coins(coins)
-            print("[Interest] applied")
+        try:
+            coins = load_coins()
+            changed = False
 
+            for _uid, balances in (coins or {}).items():
+                try:
+                    bank_balance = int(balances.get("bank", 0) or 0)
+                    if bank_balance <= 0:
+                        continue
+
+                    interest = int(bank_balance * INTEREST_RATE)
+                    if interest > 0:
+                        balances["bank"] = bank_balance + interest
+                        changed = True
+                except Exception:
+                    continue
+
+            if changed:
+                save_coins(coins)
+                print("[Interest] Applied interest to bank balances.")
+
+        except Exception as e:
+            print(f"[Interest] failed: {type(e).__name__}: {e}")
+
+    # -----------------------------------------------------
+    # Improved stock market
+    # -----------------------------------------------------
     @tasks.loop(minutes=5)
     async def update_stock_prices(self):
-        stocks = _ensure_stock_db()
+        try:
+            stocks = _ensure_stock_db()
+            changed = False
 
-        # small random drift + occasional boom/crash
-        crash = random.randint(1, 18) == 1
-        boom = random.randint(1, 18) == 1
+            crashed = []
+            boomed = []
 
-        crashed = []
-        boomed = []
+            for stock_name in STOCKS:
+                stock = stocks.get(stock_name, _default_stock_entry(stock_name))
 
-        for s in STOCKS:
-            cur = int(stocks[s]["price"])
-            if crash and cur > 200:
-                new = max(1, int(cur * random.uniform(0.45, 0.85)))
-                crashed.append((s, cur, new))
-            elif boom and cur < 3000:
-                new = int(cur * random.uniform(1.6, 2.4))
-                boomed.append((s, cur, new))
-            else:
-                new = max(1, int(cur * (1 + random.uniform(-0.03, 0.05))))
-            stocks[s]["price"] = new
-            stocks[s].setdefault("history", []).append(new)
-            if len(stocks[s]["history"]) > 24:
-                stocks[s]["history"] = stocks[s]["history"][-24:]
+                current_price = max(PRICE_FLOOR, int(stock.get("price", 100)))
+                fair_value = max(float(PRICE_FLOOR), float(stock.get("fair_value", current_price)))
+                volatility = max(0.005, float(stock.get("volatility", 0.03)))
+                drift = float(stock.get("drift", 0.002))
+                liquidity = max(1, int(stock.get("liquidity", 1200)))
 
-        save_stocks(stocks)
+                flow = self.market_flow.get(stock_name, {"buy": 0, "sell": 0})
+                buys = int(flow.get("buy", 0))
+                sells = int(flow.get("sell", 0))
+                net_flow = buys - sells
 
-        channel = self.bot.get_channel(MARKET_ANNOUNCE_CHANNEL_ID)
-        if not channel:
-            return
+                # Trade pressure is gentle and capped, so whales cannot fully rig it.
+                pressure = max(-0.04, min(0.04, net_flow / liquidity))
 
-        if crashed:
-            desc = "\n".join(f"🔻 **{s}** {old} → **{new}**" for s, old, new in crashed)
-            await channel.send(embed=discord.Embed(
-                title="📉 Market Crash!",
-                description=desc,
-                color=discord.Color.red()
-            ))
-        if boomed:
-            desc = "\n".join(f"📈 **{s}** {old} → **{new}**" for s, old, new in boomed)
-            await channel.send(embed=discord.Embed(
-                title="📈 Market Boom!",
-                description=desc,
-                color=discord.Color.green()
-            ))
+                # Mean reversion: prices drift back toward fair value.
+                # This is what makes the market feel less random and more fair.
+                reversion = ((fair_value - current_price) / max(fair_value, 1.0)) * 0.08
 
+                # Ordinary noise
+                noise = random.uniform(-volatility, volatility)
+
+                # Rare event
+                event_move = 0.0
+                event_kind = None
+                roll = random.random()
+
+                # Keep events rare and not insane
+                if roll < 0.015:
+                    event_move = -random.uniform(0.08, 0.16)
+                    event_kind = "crash"
+                elif roll > 0.985:
+                    event_move = random.uniform(0.08, 0.16)
+                    event_kind = "boom"
+
+                pct_change = drift + reversion + pressure + noise + event_move
+
+                # Cap movement so it feels fair
+                move_cap = MAX_EVENT_MOVE if event_kind else MAX_NORMAL_MOVE
+                pct_change = max(-move_cap, min(move_cap, pct_change))
+
+                new_price = max(PRICE_FLOOR, int(round(current_price * (1 + pct_change))))
+
+                # Fair value itself evolves slowly.
+                # Positive drift means the market gently grows over time,
+                # but we also add a tiny fair-value noise so stocks do not become static.
+                fair_noise = random.uniform(-0.008, 0.012)
+                new_fair_value = max(float(PRICE_FLOOR), fair_value * (1 + drift + fair_noise))
+
+                stock["price"] = new_price
+                stock["fair_value"] = round(new_fair_value, 2)
+                stock["history"] = (stock.get("history") or []) + [new_price]
+                stock["history"] = stock["history"][-48:]
+
+                stocks[stock_name] = stock
+                changed = True
+
+                if event_kind == "crash":
+                    crashed.append((stock_name, current_price, new_price))
+                elif event_kind == "boom":
+                    boomed.append((stock_name, current_price, new_price))
+
+            if changed:
+                save_stocks(stocks)
+
+            # reset cycle flow after applying it
+            self.market_flow = {s: {"buy": 0, "sell": 0} for s in STOCKS}
+
+            channel = self.bot.get_channel(MARKET_ANNOUNCE_CHANNEL_ID)
+            if not channel:
+                return
+
+            if crashed:
+                desc = "\n".join(
+                    f"🔻 **{s}** fell from **{old}** → **{new}**"
+                    for s, old, new in crashed
+                )
+                await channel.send(embed=discord.Embed(
+                    title="📉 Market Shock",
+                    description=desc,
+                    color=discord.Color.red()
+                ))
+
+            if boomed:
+                desc = "\n".join(
+                    f"📈 **{s}** rose from **{old}** → **{new}**"
+                    for s, old, new in boomed
+                )
+                await channel.send(embed=discord.Embed(
+                    title="📈 Market Rally",
+                    description=desc,
+                    color=discord.Color.green()
+                ))
+
+        except Exception as e:
+            print(f"[Stocks] update failed: {type(e).__name__}: {e}")
+
+    # -----------------------------------------------------
+    # Dividends
+    # -----------------------------------------------------
     @tasks.loop(seconds=DIVIDEND_INTERVAL)
     async def pay_dividends(self):
-        coins = load_coins()
-        stocks = _ensure_stock_db()
-        any_payout = False
+        try:
+            coins = load_coins()
+            stocks = _ensure_stock_db()
+            any_payout = False
 
-        for _uid, data in coins.items():
-            pf = (data.get("portfolio") or {})
-            total_value = 0
-            for s in STOCKS:
-                qty = int(pf.get(s, 0) or 0)
-                total_value += qty * int(stocks[s]["price"])
-            payout = int(total_value * DIVIDEND_RATE)
-            if payout > 0:
-                data["wallet"] = int(data.get("wallet", 0) or 0) + payout
-                any_payout = True
+            for _uid, data in (coins or {}).items():
+                try:
+                    _ensure_stock_fields(data)
+                    _settle_pending_for_user(data)
 
-        if any_payout:
-            save_coins(coins)
-            channel = self.bot.get_channel(MARKET_ANNOUNCE_CHANNEL_ID)
-            if channel:
-                await channel.send("💸 Dividends have been paid out to all shareholders!")
+                    pf = data.get("portfolio", {}) or {}
+                    payout_total = 0
 
+                    for stock_name in STOCKS:
+                        qty = int(pf.get(stock_name, 0) or 0)
+                        if qty <= 0:
+                            continue
+
+                        price = int(stocks[stock_name]["price"])
+                        stock_yield = float(DIVIDEND_YIELD.get(stock_name, DIVIDEND_RATE))
+                        payout_total += int(qty * price * stock_yield)
+
+                    if payout_total > 0:
+                        data["wallet"] = int(data.get("wallet", 0) or 0) + payout_total
+                        any_payout = True
+                except Exception:
+                    continue
+
+            if any_payout:
+                save_coins(coins)
+                channel = self.bot.get_channel(MARKET_ANNOUNCE_CHANNEL_ID)
+                if channel:
+                    await channel.send("💸 Dividends have been paid out to all shareholders!")
+
+        except Exception as e:
+            print(f"[Dividends] failed: {type(e).__name__}: {e}")
+
+    # -----------------------------------------------------
+    # Pending stock settlement
+    # -----------------------------------------------------
+    @tasks.loop(minutes=2)
+    async def settle_all_pending(self):
+        try:
+            coins = load_coins()
+            changed = False
+
+            for _uid, user in (coins or {}).items():
+                try:
+                    _ensure_stock_fields(user)
+                    if _settle_pending_for_user(user) > 0:
+                        changed = True
+                except Exception:
+                    continue
+
+            if changed:
+                save_coins(coins)
+
+        except Exception as e:
+            print(f"[Settlement] failed: {type(e).__name__}: {e}")
+
+    # -----------------------------------------------------
+    # Backup loop
+    # -----------------------------------------------------
     @tasks.loop(hours=5)
     async def send_backup_zip_every_5h(self):
-        await dm_backup_zip(self.bot, PACKAGE_USER_ID, reason="Every 5 hours")
+        try:
+            await dm_package_to_user(self.bot, PACKAGE_USER_ID, reason="Every 5 hours")
+        except Exception as e:
+            print(f"[BackupLoop] failed: {type(e).__name__}: {e}")
 
-    @send_backup_zip_every_5h.before_loop
-    async def before_backup_loop(self):
-        await self.bot.wait_until_ready()
-        # send once on boot
-        await dm_backup_zip(self.bot, PACKAGE_USER_ID, reason="Bot started")
-
+    # -----------------------------------------------------
+    # before_loop hooks
+    # -----------------------------------------------------
     @apply_bank_interest.before_loop
     @update_stock_prices.before_loop
     @pay_dividends.before_loop
+    @settle_all_pending.before_loop
+    @send_backup_zip_every_5h.before_loop
     async def before_loops(self):
         await self.bot.wait_until_ready()
 
