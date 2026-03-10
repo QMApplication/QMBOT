@@ -1,4 +1,5 @@
 import random
+
 import discord
 from discord.ext import commands
 
@@ -12,7 +13,10 @@ class Marriage(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command(name="marry", help="Propose to someone ❤️")
+    @commands.hybrid_command(
+        name="marry",
+        description="Propose to someone."
+    )
     async def marry(self, ctx: commands.Context, member: discord.Member):
         if member == ctx.author:
             return await ctx.send("❌ You can't marry yourself!")
@@ -23,21 +27,22 @@ class Marriage(commands.Cog):
         author_id = str(ctx.author.id)
         target_id = str(member.id)
 
-        # Already married?
         if marriages.get(author_id) or marriages.get(target_id):
             return await ctx.send("💔 One of you is already married.")
 
-        # Target already has a pending proposal?
         if target_id in MARRIAGE_PROPOSALS:
             return await ctx.send("⏳ That person already has a pending proposal. Please wait.")
 
         MARRIAGE_PROPOSALS[target_id] = author_id
         await ctx.send(
             f"💍 {ctx.author.mention} has proposed to {member.mention}!\n"
-            f"{member.mention}, type `!accept` to say yes!"
+            f"{member.mention}, type `/accept` or `!accept` to say yes!"
         )
 
-    @commands.command(name="accept", help="Accept a marriage proposal 💖")
+    @commands.hybrid_command(
+        name="accept",
+        description="Accept a marriage proposal."
+    )
     async def accept(self, ctx: commands.Context):
         user_id = str(ctx.author.id)
         proposer_id = MARRIAGE_PROPOSALS.get(user_id)
@@ -47,7 +52,6 @@ class Marriage(commands.Cog):
 
         marriages = load_marriages()
 
-        # Double-check neither is already married
         if marriages.get(proposer_id) or marriages.get(user_id):
             MARRIAGE_PROPOSALS.pop(user_id, None)
             return await ctx.send("💔 One of you is already married.")
@@ -63,10 +67,12 @@ class Marriage(commands.Cog):
             proposer_mention = f"<@{proposer_id}>"
 
         await ctx.send(f"💞 {ctx.author.mention} and {proposer_mention} are now married! 🎉")
-
         MARRIAGE_PROPOSALS.pop(user_id, None)
 
-    @commands.command(name="divorce", help="Divorce your current partner 😢")
+    @commands.hybrid_command(
+        name="divorce",
+        description="Divorce your current partner."
+    )
     async def divorce(self, ctx: commands.Context):
         user_id = str(ctx.author.id)
         marriages = load_marriages()
@@ -87,7 +93,10 @@ class Marriage(commands.Cog):
 
         await ctx.send(f"💔 {ctx.author.mention} and {partner_mention} are now divorced.")
 
-    @commands.command(name="partner", help="View your or someone else's partner 💘")
+    @commands.hybrid_command(
+        name="partner",
+        description="View your or someone else's partner."
+    )
     async def partner(self, ctx: commands.Context, member: discord.Member = None):
         member = member or ctx.author
         marriages = load_marriages()
@@ -104,7 +113,10 @@ class Marriage(commands.Cog):
 
         await ctx.send(f"💗 {member.display_name}'s partner is **{partner_name}**.")
 
-    @commands.command(name="flirt", help="Flirt with someone using a cute compliment 😘")
+    @commands.hybrid_command(
+        name="flirt",
+        description="Flirt with someone using a cute compliment."
+    )
     async def flirt(self, ctx: commands.Context, member: discord.Member):
         if member == ctx.author:
             return await ctx.send("😳 You can’t flirt with yourself... or can you?")
