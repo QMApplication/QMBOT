@@ -1,5 +1,6 @@
 import asyncio
 import random
+
 import aiohttp
 import discord
 from discord.ext import commands
@@ -12,9 +13,6 @@ from storage import (
     load_coins,
     save_coins,
 )
-
-# If you moved update_xp into listeners.py, keep this import.
-# If it lives somewhere else, change this import to match your project.
 from cogs.listeners import update_xp
 
 
@@ -38,19 +36,32 @@ def ensure_user_coins(user_id):
             }
         }
         save_coins(coins)
-
     else:
         data = coins[user_id]
-        data.setdefault("wallet", 100)
-        data.setdefault("bank", 0)
-        data.setdefault("last_daily", 0)
-        data.setdefault("last_rob", 0)
-        data.setdefault("last_beg", 0)
-        data.setdefault("last_bankrob", 0)
-        data.setdefault("portfolio", {})
-        data.setdefault("pending_portfolio", [])
-        data.setdefault("trade_meta", {"last_trade_ts": {}, "daily": {"day": "", "count": 0}})
-        save_coins(coins)
+        changed = False
+
+        defaults = {
+            "wallet": 100,
+            "bank": 0,
+            "last_daily": 0,
+            "last_rob": 0,
+            "last_beg": 0,
+            "last_bankrob": 0,
+            "portfolio": {},
+            "pending_portfolio": [],
+            "trade_meta": {
+                "last_trade_ts": {},
+                "daily": {"day": "", "count": 0}
+            }
+        }
+
+        for key, value in defaults.items():
+            if key not in data:
+                data[key] = value
+                changed = True
+
+        if changed:
+            save_coins(coins)
 
     return coins
 
@@ -69,10 +80,13 @@ def add_trivia_result(uid: str, category: str, correct: bool):
 
 
 class Trivia(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.command(name="trivia", help="Answer a trivia question with emoji reactions!")
+    @commands.hybrid_command(
+        name="trivia",
+        description="Answer a trivia question with emoji reactions."
+    )
     async def trivia(self, ctx: commands.Context):
         url = "https://the-trivia-api.com/v2/questions"
 
@@ -151,7 +165,8 @@ class Trivia(commands.Cog):
             save_coins(coins)
 
             try:
-                await update_xp(self.bot, ctx.author.id, ctx.guild.id, 20)
+                if ctx.guild:
+                    await update_xp(self.bot, ctx.author.id, ctx.guild.id, 20)
             except Exception:
                 pass
 
@@ -167,7 +182,10 @@ class Trivia(commands.Cog):
 
             await ctx.send(f"❌ Wrong! The correct answer was **{correct}**. Streak reset.")
 
-    @commands.command(name="triviastats", help="Show trivia stats. Usage: !triviastats [@user]")
+    @commands.hybrid_command(
+        name="triviastats",
+        description="Show trivia stats for yourself or another user."
+    )
     async def triviastats(self, ctx: commands.Context, member: discord.Member = None):
         member = member or ctx.author
         uid = str(member.id)
@@ -205,15 +223,26 @@ class Trivia(commands.Cog):
             description="\n".join(lines) if lines else "No data yet.",
             color=discord.Color.teal()
         )
-        embed.set_footer(text=f"Overall: ✅ {total_correct} / {total_attempts} · {overall_acc:.0f}% accuracy")
+        embed.set_footer(
+            text=f"Overall: ✅ {total_correct} / {total_attempts} · {overall_acc:.0f}% accuracy"
+        )
 
         await ctx.send(embed=embed)
 
-    @commands.command(
+    @commands.hybrid_command(
         name="trivialeaderboard",
-        help="Show the server trivia leaderboard. Usage: !trivialeaderboard [correct|accuracy|attempts] [min_attempts] [count]"
+        description="Show the server trivia leaderboard."
     )
-    async def trivialeaderboard(self, ctx: commands.Context, metric: str = "correct", min_attempts: int = 1, count: int = 10):
+    async def trivialeaderboard(
+        self,
+        ctx: commands.Context,
+        metric: str = "correct",
+        min_attempts: int = 1,
+        count: int = 10
+    ):
+        if not ctx.guild:
+            return await ctx.send("❌ This command only works in a server.")
+
         metric = metric.lower().strip()
         if metric not in ("correct", "accuracy", "attempts"):
             metric = "correct"
@@ -261,13 +290,22 @@ class Trivia(commands.Cog):
             return await ctx.send(f"📊 No qualifying players yet (min attempts: {min_attempts}).")
 
         if metric == "correct":
-            leaderboard.sort(key=lambda r: (r["correct"], r["accuracy"], r["attempts"]), reverse=True)
+            leaderboard.sort(
+                key=lambda r: (r["correct"], r["accuracy"], r["attempts"]),
+                reverse=True
+            )
             title = "🏆 Trivia Leaderboard — Most Correct"
         elif metric == "accuracy":
-            leaderboard.sort(key=lambda r: (r["accuracy"], r["attempts"], r["correct"]), reverse=True)
+            leaderboard.sort(
+                key=lambda r: (r["accuracy"], r["attempts"], r["correct"]),
+                reverse=True
+            )
             title = "🎯 Trivia Leaderboard — Best Accuracy"
         else:
-            leaderboard.sort(key=lambda r: (r["attempts"], r["correct"], r["accuracy"]), reverse=True)
+            leaderboard.sort(
+                key=lambda r: (r["attempts"], r["correct"], r["accuracy"]),
+                reverse=True
+            )
             title = "⏱️ Trivia Leaderboard — Most Attempts"
 
         lines = []
@@ -289,5 +327,5 @@ class Trivia(commands.Cog):
         await ctx.send(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(Trivia(bot))
