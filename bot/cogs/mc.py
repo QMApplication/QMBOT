@@ -1,4 +1,3 @@
-# cogs/mc.py
 import asyncio
 import aiohttp
 import discord
@@ -11,9 +10,15 @@ from config import (
     MC_NOTES, MC_SHOW_BEDROCK, MC_BEDROCK_PORT
 )
 
+
+def _safe_join_url(label: str, url: str) -> str:
+    return f"{label}: {url}"
+
+
 class MCLinksView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
+
         if MC_MODRINTH_URL:
             self.add_item(discord.ui.Button(label="Modrinth", url=MC_MODRINTH_URL))
         if MC_MAP_URL:
@@ -23,14 +28,20 @@ class MCLinksView(discord.ui.View):
         if MC_DISCORD_URL:
             self.add_item(discord.ui.Button(label="Discord", url=MC_DISCORD_URL))
 
+
 async def fetch_mc_status_fallback(address: str):
+    """
+    SRV-friendly fallback status provider (public API).
+    """
     url = f"https://api.mcsrvstat.us/2/{address}"
     timeout = aiohttp.ClientTimeout(total=6)
+
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url) as resp:
             if resp.status != 200:
                 raise RuntimeError(f"Fallback API returned HTTP {resp.status}")
             return await resp.json()
+
 
 class Minecraft(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -40,7 +51,11 @@ class Minecraft(commands.Cog):
     async def mc(self, ctx: commands.Context):
         address = MC_ADDRESS
 
+        # --- Player-facing description (matches original) ---
         desc_lines = [
+            f"**Bedrock Port:** 22050",
+            "**Java Port:** 22165",
+            "",
             "**Join (Java):** `qmul-survival.modrinth.gg`",
             "",
             "**How to join:** Multiplayer → Add Server → paste the address above.",
@@ -59,27 +74,44 @@ class Minecraft(commands.Cog):
             color=discord.Color.purple()
         )
 
+        # Core info
         embed.add_field(name="Version", value=f"`{MC_VERSION}`", inline=True)
         embed.add_field(name="Loader", value=f"`{MC_LOADER}`", inline=True)
         embed.add_field(name="Modpack", value=f"`{MC_MODPACK_NAME}`", inline=True)
-        embed.add_field(name="Access", value=("Whitelist ON" if MC_WHITELISTED else "Public / No whitelist"), inline=True)
+
+        # Optional extra info
+        embed.add_field(
+            name="Access",
+            value=("Whitelist ON" if MC_WHITELISTED else "Public / No whitelist"),
+            inline=True
+        )
         embed.add_field(name="Region", value=MC_REGION, inline=True)
 
+        # Notes
         if MC_NOTES:
-            embed.add_field(name="📌 Notes", value="\n".join(f"• {x}" for x in MC_NOTES)[:1024], inline=False)
+            embed.add_field(
+                name="📌 Notes",
+                value="\n".join(f"• {x}" for x in MC_NOTES)[:1024],
+                inline=False
+            )
 
         # Links
         link_lines = []
-        if MC_MODRINTH_URL: link_lines.append(f"Modrinth: {MC_MODRINTH_URL}")
-        if MC_MAP_URL:      link_lines.append(f"Live Map: {MC_MAP_URL}")
-        if MC_RULES_URL:    link_lines.append(f"Rules: {MC_RULES_URL}")
-        if MC_DISCORD_URL:  link_lines.append(f"Discord: {MC_DISCORD_URL}")
+        if MC_MODRINTH_URL:
+            link_lines.append(_safe_join_url("Modrinth", MC_MODRINTH_URL))
+        if MC_MAP_URL:
+            link_lines.append(_safe_join_url("Live Map", MC_MAP_URL))
+        if MC_RULES_URL:
+            link_lines.append(_safe_join_url("Rules", MC_RULES_URL))
+        if MC_DISCORD_URL:
+            link_lines.append(_safe_join_url("Discord", MC_DISCORD_URL))
+
         if link_lines:
             embed.add_field(name="Links", value="\n".join(link_lines)[:1024], inline=False)
 
         live_status_set = False
 
-        # Attempt 1: mcstatus (if installed)
+        # ---- Attempt 1: mcstatus ----
         try:
             from mcstatus import JavaServer
 
@@ -95,15 +127,21 @@ class Minecraft(commands.Cog):
             online = getattr(status.players, "online", None)
             maxp = getattr(status.players, "max", None)
 
-            if online is not None and maxp is not None:
-                embed.add_field(name="🟢 Server Status", value=f"Online — **{online}/{maxp}** players", inline=False)
-            else:
-                embed.add_field(name="🟢 Server Status", value="Online", inline=False)
-
+            motd_plain = None
             try:
                 motd_plain = status.motd.to_plain()
             except Exception:
                 motd_plain = None
+
+            if online is not None and maxp is not None:
+                embed.add_field(
+                    name="🟢 Server Status",
+                    value=f"Online — **{online}/{maxp}** players",
+                    inline=False
+                )
+            else:
+                embed.add_field(name="🟢 Server Status", value="Online", inline=False)
+
             if motd_plain:
                 embed.add_field(name="MOTD", value=motd_plain[:1000], inline=False)
 
@@ -113,20 +151,27 @@ class Minecraft(commands.Cog):
 
             live_status_set = True
 
+        except ModuleNotFoundError:
+            pass
         except Exception:
             pass
 
-        # Attempt 2: fallback API
+        # ---- Attempt 2: fallback API ----
         if not live_status_set:
             try:
                 data = await fetch_mc_status_fallback(address)
+
                 if not data.get("online"):
                     embed.add_field(name="🔴 Server Status", value="Offline", inline=False)
                 else:
                     players = data.get("players") or {}
                     online = players.get("online", "?")
                     maxp = players.get("max", "?")
-                    embed.add_field(name="🟢 Server Status", value=f"Online — **{online}/{maxp}** players", inline=False)
+                    embed.add_field(
+                        name="🟢 Server Status",
+                        value=f"Online — **{online}/{maxp}** players",
+                        inline=False
+                    )
 
                     motd = data.get("motd") or {}
                     clean = motd.get("clean")
@@ -134,10 +179,17 @@ class Minecraft(commands.Cog):
                         embed.add_field(name="MOTD", value="\n".join(clean)[:1000], inline=False)
 
             except Exception:
-                embed.add_field(name="⚠️ Live Status", value="Couldn’t fetch status right now.", inline=False)
+                embed.add_field(
+                    name="⚠️ Live Status",
+                    value="Couldn’t fetch status right now.",
+                    inline=False
+                )
 
         embed.set_footer(text=f"Copy/paste Java join IP: {address}")
-        await ctx.send(embed=embed, view=MCLinksView())
+
+        view = MCLinksView()
+        await ctx.send(embed=embed, view=view)
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Minecraft(bot))
