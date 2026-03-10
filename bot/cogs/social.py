@@ -19,11 +19,21 @@ class Social(commands.Cog):
             return await ctx.send("🤖 I won't insult bots.")
 
         lines = [
-            "has the IQ of a damp sponge.",
-            "could lose a debate with a brick.",
-            "once tried to microwave a salad.",
-            "is proof evolution can go backwards.",
-            "has the strategic thinking of a potato."
+            "I hope you know ur a fat fuck, biggie",
+            "Any racial slur would be a complement to you",
+            "I would rather drag my testicles over shattered glass than to talk to you any longer",
+            "Even moses cant part that fucking unibrow, ugly fuck",
+            "your Ital*an (from iggy)",
+            "kys",
+            "retard.",
+            "retarded is a compliment to you",
+            "I hope love never finds ur fugly ahh",
+            "Fuckkk 🐺...",
+            "flippin Malteser",
+            "Fuck you, you ho. Come and say to my face, I'll fuck you in the ass in front of everybody. You bitch.",
+            "Whoever's willing to fuck you is just too lazy to jerk off.",
+            "God just be making anyone",
+            "You should have been a blowjob"
         ]
 
         msg = f"{ctx.author.mention} insults {member.mention}: **{random.choice(lines)}**"
@@ -38,11 +48,13 @@ class Social(commands.Cog):
     async def threaten(self, ctx, member: discord.Member):
 
         lines = [
-            "I'm coming for your kneecaps.",
-            "sleep with one eye open tonight.",
-            "you better watch your back.",
-            "your days are numbered.",
-            "this server isn't big enough for both of us."
+            "I will pee your pants",
+            "I will touch you",
+            "*twirls your balls (testicular torsion way)* 🔌😈",
+            "I will jiggle your tits",
+            "I will send you to I*aly",
+            "I will wet your socks (sexually)",
+            "🇫🇷"
         ]
 
         await ctx.send(
@@ -57,11 +69,13 @@ class Social(commands.Cog):
     async def warn(self, ctx, member: discord.Member):
 
         lines = [
-            "This is your final warning.",
-            "Don't test my patience.",
-            "Behave yourself.",
-            "You're walking on thin ice.",
-            "Consider yourself warned."
+            "That message has been escorted out by security.",
+            "Please keep your hands, feet, and words to yourself.",
+            "This is a no-weird-zone. Thank you for your cooperation.",
+            "Bonk. Go to respectful conversation jail.",
+            "That was a bit much. Let’s dial it back.",
+            "Socks will remain dry. Boundaries enforced.",
+            "International incidents are not permitted here."
         ]
 
         await ctx.send(
@@ -94,16 +108,8 @@ class Social(commands.Cog):
     @commands.command()
     async def stab(self, ctx, member: discord.Member):
 
-        lines = [
-            "🔪 Critical hit!",
-            "🗡️ Sneak attack!",
-            "💀 Fatal blow!",
-            "🩸 That looked painful.",
-            "⚔️ Direct strike."
-        ]
-
         await ctx.send(
-            f"{ctx.author.mention} stabbed {member.mention}! {random.choice(lines)}"
+            f"{ctx.author.mention} stabbed {member.mention}!"
         )
 
     # -------------------------
@@ -113,16 +119,8 @@ class Social(commands.Cog):
     @commands.command()
     async def lick(self, ctx, member: discord.Member):
 
-        lines = [
-            "😳 That was unexpected.",
-            "👅 That's kinda weird.",
-            "🤨 Why would you do that?",
-            "😶 Everyone saw that.",
-            "🫣 That's embarrassing."
-        ]
-
         await ctx.send(
-            f"{ctx.author.mention} licked {member.mention}. {random.choice(lines)}"
+            f"{ctx.author.mention} licked {member.mention}."
         )
 
 
