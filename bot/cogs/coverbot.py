@@ -1,9 +1,11 @@
 import discord
 from discord.ext import commands
 
-
 from config import COVER_BOT_ID, COVER_INVITE_URL, RESTRICT_GUILD_NAME
 from utils import get_member_safe
+
+
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 
 def _restricted_here(ctx: commands.Context) -> bool:
@@ -23,18 +25,29 @@ class CoverBot(commands.Cog):
     )
     async def coverstatus(self, ctx: commands.Context):
         if not ctx.guild:
-            return await ctx.send("❌ This command can only be used in a server.")
+            return await ctx.send("This command can only be used in a server.")
 
         if not _restricted_here(ctx):
             return await ctx.send(
-                f"❌ This command is only for **{RESTRICT_GUILD_NAME}**."
+                f"This command is only for **{RESTRICT_GUILD_NAME}**."
             )
 
         member = await get_member_safe(ctx.guild, COVER_BOT_ID)
+
         if member:
-            await ctx.send("✅ The Cover bot is **already in this server**.")
+            embed = discord.Embed(
+                title="Cover Bot",
+                description="The Cover bot is already in this server.",
+                color=EMBED_COLOR
+            )
         else:
-            await ctx.send("ℹ️ The Cover bot is **not in this server** yet.")
+            embed = discord.Embed(
+                title="Cover Bot",
+                description="The Cover bot is not in this server.",
+                color=EMBED_COLOR
+            )
+
+        await ctx.send(embed=embed)
 
     @commands.hybrid_command(
         name="coverjoin",
@@ -43,16 +56,16 @@ class CoverBot(commands.Cog):
     @commands.has_permissions(manage_guild=True)
     async def coverjoin(self, ctx: commands.Context):
         if not ctx.guild:
-            return await ctx.send("❌ This command can only be used in a server.")
+            return await ctx.send("This command can only be used in a server.")
 
         if not _restricted_here(ctx):
             return await ctx.send(
-                f"❌ This command is only for **{RESTRICT_GUILD_NAME}**."
+                f"This command is only for **{RESTRICT_GUILD_NAME}**."
             )
 
         member = await get_member_safe(ctx.guild, COVER_BOT_ID)
         if member:
-            return await ctx.send("✅ The Cover bot is already here.")
+            return await ctx.send("The Cover bot is already here.")
 
         view = discord.ui.View()
         view.add_item(
@@ -60,12 +73,12 @@ class CoverBot(commands.Cog):
         )
 
         embed = discord.Embed(
-            title="Add the Cover bot",
+            title="Invite Cover Bot",
             description=(
-                "Click the button below to open the Discord OAuth2 page.\n"
-                "You must be logged in and have **Manage Server** permission here."
+                "Use the button below to open the Discord OAuth2 page.\n"
+                "You must be logged in and have permission to manage this server."
             ),
-            color=discord.Color.blurple(),
+            color=EMBED_COLOR
         )
 
         await ctx.send(embed=embed, view=view)
@@ -75,10 +88,14 @@ class CoverBot(commands.Cog):
             dm_view.add_item(
                 discord.ui.Button(label="Invite Cover Bot", url=COVER_INVITE_URL)
             )
-            await ctx.author.send(
-                "Here’s the invite link for the Cover bot:",
-                view=dm_view
+
+            dm_embed = discord.Embed(
+                title="Invite Cover Bot",
+                description="Here is the invite link for the Cover bot.",
+                color=EMBED_COLOR
             )
+
+            await ctx.author.send(embed=dm_embed, view=dm_view)
         except discord.Forbidden:
             pass
 
@@ -89,28 +106,35 @@ class CoverBot(commands.Cog):
     @commands.has_permissions(kick_members=True)
     async def coverleave(self, ctx: commands.Context):
         if not ctx.guild:
-            return await ctx.send("❌ This command can only be used in a server.")
+            return await ctx.send("This command can only be used in a server.")
 
         if not _restricted_here(ctx):
             return await ctx.send(
-                f"❌ This command is only for **{RESTRICT_GUILD_NAME}**."
+                f"This command is only for **{RESTRICT_GUILD_NAME}**."
             )
 
         member = await get_member_safe(ctx.guild, COVER_BOT_ID)
         if not member:
-            return await ctx.send("ℹ️ The Cover bot isn’t in this server.")
+            return await ctx.send("The Cover bot is not in this server.")
 
         try:
             await member.kick(reason=f"Requested by {ctx.author} via coverleave")
-            await ctx.send("👋 The Cover bot has been removed from this server.")
+
+            embed = discord.Embed(
+                title="Cover Bot",
+                description="The Cover bot has been removed from this server.",
+                color=EMBED_COLOR
+            )
+            await ctx.send(embed=embed)
+
         except discord.Forbidden:
             await ctx.send(
-                "❌ I don’t have permission to kick that bot "
-                "(role too low or missing permission)."
+                "I don’t have permission to kick that bot."
             )
+
         except discord.HTTPException as e:
             await ctx.send(
-                f"⚠️ Failed to remove: {type(e).__name__}. Try again later."
+                f"Failed to remove the bot: {type(e).__name__}."
             )
 
 
