@@ -101,7 +101,7 @@ def combine_cards(cards: list[str], hide_second: bool = False) -> str:
     return "\n".join(lines)
 
 
-def wrap_cards(cards: list[str], hide_second=False, per_row=2):
+def wrap_cards(cards: list[str], hide_second=False, per_row=3):
 
     rows = []
 
