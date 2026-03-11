@@ -5,8 +5,7 @@ from storage import load_coins, save_coins, load_inventory, save_inventory
 from config import SHOP_ITEMS, ITEM_PRICES
 
 
-def ensure_user(user_id):
-    coins = load_coins()
+def ensure_user(coins: dict, user_id: int | str) -> dict:
     uid = str(user_id)
 
     if uid not in coins:
@@ -14,40 +13,36 @@ def ensure_user(user_id):
             "wallet": 100,
             "bank": 0
         }
-        save_coins(coins)
 
-    return coins
+    return coins[uid]
 
 
-def ensure_inventory(user_id):
-    inv = load_inventory()
+def ensure_inventory(inv: dict, user_id: int | str) -> dict:
     uid = str(user_id)
 
     if uid not in inv:
         inv[uid] = {}
-        save_inventory(inv)
 
-    return inv
+    return inv[uid]
 
 
 class Shop(commands.Cog):
-
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     # -------------------------
     # SHOP
     # -------------------------
 
-    @commands.command()
-    async def shop(self, ctx):
-
+    @commands.hybrid_command(
+        name="shop",
+        description="View the shop."
+    )
+    async def shop(self, ctx: commands.Context):
         desc = ""
 
         for item in SHOP_ITEMS:
-
             price = ITEM_PRICES.get(item, 0)
-
             desc += f"**{item}** — {price} coins\n"
 
         embed = discord.Embed(
@@ -62,9 +57,11 @@ class Shop(commands.Cog):
     # BUY ITEM
     # -------------------------
 
-    @commands.command()
-    async def buyitem(self, ctx, *, item: str):
-
+    @commands.hybrid_command(
+        name="buyitem",
+        description="Buy an item from the shop."
+    )
+    async def buyitem(self, ctx: commands.Context, *, item: str):
         item = item.strip()
 
         if item not in SHOP_ITEMS:
@@ -72,17 +69,17 @@ class Shop(commands.Cog):
 
         price = ITEM_PRICES[item]
 
-        coins = ensure_user(ctx.author.id)
-        user = coins[str(ctx.author.id)]
+        coins = load_coins()
+        user = ensure_user(coins, ctx.author.id)
 
         if user["wallet"] < price:
             return await ctx.send("Not enough coins.")
 
-        inv = ensure_inventory(ctx.author.id)
+        inv = load_inventory()
+        user_inv = ensure_inventory(inv, ctx.author.id)
 
         user["wallet"] -= price
-
-        inv[str(ctx.author.id)][item] = inv[str(ctx.author.id)].get(item, 0) + 1
+        user_inv[item] = user_inv.get(item, 0) + 1
 
         save_coins(coins)
         save_inventory(inv)
@@ -93,14 +90,15 @@ class Shop(commands.Cog):
     # INVENTORY
     # -------------------------
 
-    @commands.command()
-    async def inventory(self, ctx, member: discord.Member = None):
-
+    @commands.hybrid_command(
+        name="inventory",
+        description="View your inventory."
+    )
+    async def inventory(self, ctx: commands.Context, member: discord.Member = None):
         member = member or ctx.author
 
-        inv = ensure_inventory(member.id)
-
-        user_inv = inv[str(member.id)]
+        inv = load_inventory()
+        user_inv = ensure_inventory(inv, member.id)
 
         if not user_inv:
             return await ctx.send("Inventory empty.")
@@ -108,7 +106,6 @@ class Shop(commands.Cog):
         desc = ""
 
         for item, qty in user_inv.items():
-
             desc += f"{item} x{qty}\n"
 
         embed = discord.Embed(
@@ -120,5 +117,5 @@ class Shop(commands.Cog):
         await ctx.send(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(Shop(bot))
