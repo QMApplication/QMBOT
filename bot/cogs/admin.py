@@ -13,6 +13,14 @@ from cogs.tasks import dm_package_to_user
 EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 
+def make_embed(title: str, description: str) -> discord.Embed:
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=EMBED_COLOR
+    )
+
+
 class Admin(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
@@ -31,7 +39,9 @@ class Admin(commands.Cog):
         channel = self.bot.get_channel(SUGGESTION_CHANNEL_ID)
 
         if not channel:
-            return await ctx.send("Suggestion channel not configured.")
+            return await ctx.send(
+                embed=make_embed("Suggestion", "Suggestion channel not configured.")
+            )
 
         suggestions = load_suggestions()
 
@@ -43,11 +53,7 @@ class Admin(commands.Cog):
         suggestions.append(entry)
         save_suggestions(suggestions)
 
-        embed = discord.Embed(
-            title="Suggestion",
-            description=suggestion,
-            color=EMBED_COLOR
-        )
+        embed = make_embed("Suggestion", suggestion)
         embed.set_footer(text=f"From {ctx.author.display_name}")
 
         msg = await channel.send(embed=embed)
@@ -55,12 +61,7 @@ class Admin(commands.Cog):
         await msg.add_reaction("👍")
         await msg.add_reaction("👎")
 
-        confirm = discord.Embed(
-            title="Submitted",
-            description="Your suggestion has been sent.",
-            color=EMBED_COLOR
-        )
-
+        confirm = make_embed("Submitted", "Your suggestion has been sent.")
         await ctx.send(embed=confirm)
 
     # -------------------------
@@ -77,23 +78,16 @@ class Admin(commands.Cog):
         channel = self.bot.get_channel(ANNOUNCEMENT_CHANNEL_ID)
 
         if not channel:
-            return await ctx.send("Announcement channel not configured.")
+            return await ctx.send(
+                embed=make_embed("Announcement", "Announcement channel not configured.")
+            )
 
-        embed = discord.Embed(
-            title="Announcement",
-            description=message,
-            color=EMBED_COLOR
-        )
+        embed = make_embed("Announcement", message)
         embed.set_footer(text=f"Posted by {ctx.author.display_name}")
 
         await channel.send(embed=embed)
 
-        confirm = discord.Embed(
-            title="Sent",
-            description="Announcement posted successfully.",
-            color=EMBED_COLOR
-        )
-
+        confirm = make_embed("Sent", "Announcement posted successfully.")
         await ctx.send(embed=confirm)
 
     # -------------------------
@@ -107,7 +101,9 @@ class Admin(commands.Cog):
     async def package(self, ctx: commands.Context):
 
         if ctx.author.id != PACKAGE_USER_ID:
-            return await ctx.send("You are not authorised.")
+            return await ctx.send(
+                embed=make_embed("Backup", "You are not authorised.")
+            )
 
         success = await dm_package_to_user(
             self.bot,
@@ -116,19 +112,38 @@ class Admin(commands.Cog):
         )
 
         if success:
-            embed = discord.Embed(
-                title="Backup",
-                description="Backup sent successfully.",
-                color=EMBED_COLOR
-            )
+            embed = make_embed("Backup", "Backup sent successfully.")
         else:
-            embed = discord.Embed(
-                title="Backup",
-                description="Backup failed.",
-                color=EMBED_COLOR
-            )
+            embed = make_embed("Backup", "Backup failed.")
 
         await ctx.send(embed=embed)
+
+    # -------------------------
+    # ERROR HANDLERS
+    # -------------------------
+
+    @announcement.error
+    async def announcement_error(self, ctx: commands.Context, error):
+        if isinstance(error, commands.MissingPermissions):
+            await ctx.send(
+                embed=make_embed("Announcement", "You do not have permission to use this command.")
+            )
+        else:
+            await ctx.send(
+                embed=make_embed("Announcement", "Something went wrong while sending the announcement.")
+            )
+
+    @suggest.error
+    async def suggest_error(self, ctx: commands.Context, error):
+        await ctx.send(
+            embed=make_embed("Suggestion", "Something went wrong while submitting your suggestion.")
+        )
+
+    @package.error
+    async def package_error(self, ctx: commands.Context, error):
+        await ctx.send(
+            embed=make_embed("Backup", "Something went wrong while creating the backup.")
+        )
 
 
 async def setup(bot):
