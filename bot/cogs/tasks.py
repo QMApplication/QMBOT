@@ -26,6 +26,17 @@ from config import (
 from storage import load_coins, save_coins, load_stocks, save_stocks
 
 
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+
+
+def make_embed(title: str, description: str) -> discord.Embed:
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=EMBED_COLOR
+    )
+
+
 # =========================================================
 # Generic helpers
 # =========================================================
@@ -229,7 +240,12 @@ async def dm_package_to_user(
 
         if not included:
             try:
-                await user.send(f"⚠️ Backup attempt ({reason}) — no files found to package.")
+                await user.send(
+                    embed=make_embed(
+                        "Backup",
+                        f"⚠️ Backup attempt ({reason}) — no files found to package."
+                    )
+                )
             except Exception:
                 pass
             return True
@@ -237,12 +253,13 @@ async def dm_package_to_user(
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S_UTC")
         file = discord.File(zip_buf, filename=f"qmul_bot_backup_{ts}.zip")
 
-        msg = (
-            f"📦 **Bot Backup** ({reason})\n"
+        embed = make_embed(
+            "Bot Backup",
+            f"Reason: **{reason}**\n"
             f"Included: {', '.join(Path(x).name for x in included)}"
         )
 
-        await user.send(content=msg, file=file)
+        await user.send(embed=embed, file=file)
         print(f"[Package] Sent backup zip to {user_id} ({len(included)} files).")
         return True
 
@@ -392,22 +409,14 @@ class BackgroundTasks(commands.Cog):
                     f"🔻 **{s}** fell from **{old}** → **{new}**"
                     for s, old, new in crashed
                 )
-                await channel.send(embed=discord.Embed(
-                    title="📉 Market Shock",
-                    description=desc,
-                    color=discord.Color.red()
-                ))
+                await channel.send(embed=make_embed("📉 Market Shock", desc))
 
             if boomed:
                 desc = "\n".join(
                     f"📈 **{s}** rose from **{old}** → **{new}**"
                     for s, old, new in boomed
                 )
-                await channel.send(embed=discord.Embed(
-                    title="📈 Market Rally",
-                    description=desc,
-                    color=discord.Color.green()
-                ))
+                await channel.send(embed=make_embed("📈 Market Rally", desc))
 
         except Exception as e:
             print(f"[Stocks] update failed: {type(e).__name__}: {e}")
@@ -446,7 +455,12 @@ class BackgroundTasks(commands.Cog):
                 save_coins(coins)
                 channel = self.bot.get_channel(MARKET_ANNOUNCE_CHANNEL_ID)
                 if channel:
-                    await channel.send("💸 Dividends have been paid out to all shareholders!")
+                    await channel.send(
+                        embed=make_embed(
+                            "💸 Dividends Paid",
+                            "Dividends have been paid out to all shareholders."
+                        )
+                    )
 
         except Exception as e:
             print(f"[Dividends] failed: {type(e).__name__}: {e}")
