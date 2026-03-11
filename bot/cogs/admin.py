@@ -6,9 +6,11 @@ from config import (
     ANNOUNCEMENT_CHANNEL_ID,
     PACKAGE_USER_ID,
 )
-
 from storage import load_suggestions, save_suggestions
 from cogs.tasks import dm_package_to_user
+
+
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 
 class Admin(commands.Cog):
@@ -39,23 +41,27 @@ class Admin(commands.Cog):
         }
 
         suggestions.append(entry)
-
         save_suggestions(suggestions)
 
         embed = discord.Embed(
-            title="💡 New Suggestion",
+            title="Suggestion",
             description=suggestion,
-            color=discord.Color.blue()
+            color=EMBED_COLOR
         )
-
-        embed.set_footer(text=f"Suggested by {ctx.author}")
+        embed.set_footer(text=f"From {ctx.author.display_name}")
 
         msg = await channel.send(embed=embed)
 
         await msg.add_reaction("👍")
         await msg.add_reaction("👎")
 
-        await ctx.send("Suggestion submitted!")
+        confirm = discord.Embed(
+            title="Submitted",
+            description="Your suggestion has been sent.",
+            color=EMBED_COLOR
+        )
+
+        await ctx.send(embed=confirm)
 
     # -------------------------
     # ANNOUNCEMENT
@@ -74,16 +80,21 @@ class Admin(commands.Cog):
             return await ctx.send("Announcement channel not configured.")
 
         embed = discord.Embed(
-            title="📢 Announcement",
+            title="Announcement",
             description=message,
-            color=discord.Color.gold()
+            color=EMBED_COLOR
         )
-
-        embed.set_footer(text=f"Posted by {ctx.author}")
+        embed.set_footer(text=f"Posted by {ctx.author.display_name}")
 
         await channel.send(embed=embed)
 
-        await ctx.send("Announcement sent.")
+        confirm = discord.Embed(
+            title="Sent",
+            description="Announcement posted successfully.",
+            color=EMBED_COLOR
+        )
+
+        await ctx.send(embed=confirm)
 
     # -------------------------
     # PACKAGE (manual backup)
@@ -105,9 +116,19 @@ class Admin(commands.Cog):
         )
 
         if success:
-            await ctx.send("Backup sent.")
+            embed = discord.Embed(
+                title="Backup",
+                description="Backup sent successfully.",
+                color=EMBED_COLOR
+            )
         else:
-            await ctx.send("Backup failed.")
+            embed = discord.Embed(
+                title="Backup",
+                description="Backup failed.",
+                color=EMBED_COLOR
+            )
+
+        await ctx.send(embed=embed)
 
 
 async def setup(bot):
