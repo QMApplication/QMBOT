@@ -43,24 +43,50 @@ class Economy(commands.Cog):
     # -------------------------
 
     @commands.hybrid_command(
-        name="balance",
-        description="Check your balance."
+        name="baltop",
+        description="Show the richest users."
     )
-    async def balance(self, ctx, member: discord.Member = None):
+    async def baltop(self, ctx):
         coins = load_coins()
-        member = member or ctx.author
-        user = ensure_user(coins, member.id)
+        leaderboard = []
+
+        for uid, data in coins.items():
+            wallet = data.get("wallet", 0)
+            bank = data.get("bank", 0)
+            total = wallet + bank
+
+            leaderboard.append((uid, wallet, bank, total))
+
+        leaderboard.sort(key=lambda x: x[3], reverse=True)
+
+        rows = []
+
+        for i, (uid, wallet, bank, total) in enumerate(leaderboard[:10], 1):
+
+            member = ctx.guild.get_member(int(uid)) if ctx.guild else None
+            name = member.display_name if member else f"User {uid}"
+
+            you = " ⋆ YOU" if int(uid) == ctx.author.id else ""
+
+            block = (
+                f"{str(i).rjust(2)}  {name}\n"
+                f"    ¢ Wallet : {wallet}\n"
+                f"    ♕ QMBank : {bank}\n"
+                f"    Total    : {total}{you}"
+            )
+
+            rows.append(block)
+
+        table = "```\n" + "\n\n".join(rows) + "\n```"
 
         embed = discord.Embed(
-            title=f"{member.display_name} — Balance",
-            description="Current funds",
+            title="Balance Leaderboard",
+            description=table,
             color=EMBED_COLOR
         )
-        embed.add_field(name="¢ Wallet        |", value=f"`{user['wallet']}`", inline=True)
-        embed.add_field(name="♕ QMBank        ", value=f"`{user['bank']}`", inline=True)
 
         await ctx.send(embed=embed)
-
+        
     # -------------------------
     # DEPOSIT
     # -------------------------
