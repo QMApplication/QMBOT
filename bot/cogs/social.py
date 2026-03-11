@@ -3,6 +3,9 @@ from discord.ext import commands
 import random
 
 
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+
+
 class Social(commands.Cog):
 
     def __init__(self, bot):
@@ -19,7 +22,7 @@ class Social(commands.Cog):
     async def insult(self, ctx, member: discord.Member):
 
         if member.bot:
-            return await ctx.send("🤖 I won't insult bots.")
+            return await ctx.send("I won't insult bots.")
 
         lines = [
             "I hope you know ur a fat fuck, biggie",
@@ -39,9 +42,18 @@ class Social(commands.Cog):
             "You should have been a blowjob"
         ]
 
-        msg = f"{ctx.author.mention} insults {member.mention}: **{random.choice(lines)}**"
+        embed = discord.Embed(
+            title="Insult",
+            description=random.choice(lines),
+            color=EMBED_COLOR
+        )
 
-        await ctx.send(msg)
+        embed.set_footer(text=f"{ctx.author.display_name} → {member.display_name}")
+
+        await ctx.send(
+            content=f"{ctx.author.mention} → {member.mention}",
+            embed=embed
+        )
 
     # -------------------------
     # THREATEN
@@ -63,8 +75,17 @@ class Social(commands.Cog):
             "🇫🇷"
         ]
 
+        embed = discord.Embed(
+            title="Threat",
+            description=random.choice(lines),
+            color=EMBED_COLOR
+        )
+
+        embed.set_footer(text=f"{ctx.author.display_name} → {member.display_name}")
+
         await ctx.send(
-            f"{ctx.author.mention} threatens {member.mention}: **{random.choice(lines)}**"
+            content=f"{ctx.author.mention} → {member.mention}",
+            embed=embed
         )
 
     # -------------------------
@@ -87,8 +108,17 @@ class Social(commands.Cog):
             "International incidents are not permitted here."
         ]
 
+        embed = discord.Embed(
+            title="Warning",
+            description=random.choice(lines),
+            color=EMBED_COLOR
+        )
+
+        embed.set_footer(text=f"{ctx.author.display_name} → {member.display_name}")
+
         await ctx.send(
-            f"⚠️ {ctx.author.mention} warns {member.mention}: **{random.choice(lines)}**"
+            content=f"{ctx.author.mention} → {member.mention}",
+            embed=embed
         )
 
     # -------------------------
@@ -109,8 +139,17 @@ class Social(commands.Cog):
             "You're carrying this server."
         ]
 
+        embed = discord.Embed(
+            title="Compliment",
+            description=random.choice(lines),
+            color=EMBED_COLOR
+        )
+
+        embed.set_footer(text=f"{ctx.author.display_name} → {member.display_name}")
+
         await ctx.send(
-            f"{ctx.author.mention} compliments {member.mention}: **{random.choice(lines)}**"
+            content=f"{ctx.author.mention} → {member.mention}",
+            embed=embed
         )
 
     # -------------------------
@@ -123,8 +162,17 @@ class Social(commands.Cog):
     )
     async def stab(self, ctx, member: discord.Member):
 
+        embed = discord.Embed(
+            title="Action",
+            description="Stab",
+            color=EMBED_COLOR
+        )
+
+        embed.set_footer(text=f"{ctx.author.display_name} → {member.display_name}")
+
         await ctx.send(
-            f"{ctx.author.mention} stabbed {member.mention}!"
+            content=f"{ctx.author.mention} stabbed {member.mention}.",
+            embed=embed
         )
 
     # -------------------------
@@ -137,8 +185,17 @@ class Social(commands.Cog):
     )
     async def lick(self, ctx, member: discord.Member):
 
+        embed = discord.Embed(
+            title="Action",
+            description="Lick",
+            color=EMBED_COLOR
+        )
+
+        embed.set_footer(text=f"{ctx.author.display_name} → {member.display_name}")
+
         await ctx.send(
-            f"{ctx.author.mention} licked {member.mention}."
+            content=f"{ctx.author.mention} licked {member.mention}.",
+            embed=embed
         )
 
 
