@@ -49,8 +49,45 @@ def hand_value(hand: list[str]) -> int:
     return total
 
 
-def format_hand(hand: list[str]) -> str:
-    return f"`{'  '.join(hand)}`"
+def render_card(card: str) -> list[str]:
+    rank = card[:-1]
+    suit = card[-1]
+
+    middle = rank.center(3)
+
+    return [
+        "┌─────┐",
+        f"│{suit:<5}│",
+        f"│{middle}│",
+        f"│{suit:>5}│",
+        "└─────┘",
+    ]
+
+
+def render_hidden_card() -> list[str]:
+    return [
+        "┌─────┐",
+        "│     │",
+        "│ QM  │",
+        "│     │",
+        "└─────┘",
+    ]
+
+
+def combine_cards(cards: list[str], hide_second: bool = False) -> str:
+    rendered = []
+
+    for i, card in enumerate(cards):
+        if hide_second and i == 1:
+            rendered.append(render_hidden_card())
+        else:
+            rendered.append(render_card(card))
+
+    lines = []
+    for row in range(5):
+        lines.append(" ".join(card[row] for card in rendered))
+
+    return "\n".join(lines)
 
 
 class GambleView(discord.ui.View):
@@ -121,9 +158,8 @@ class GambleView(discord.ui.View):
 
 
 class BlackjackView(discord.ui.View):
-    def __init__(self, *, cog, author_id: int):
+    def __init__(self, *, author_id: int):
         super().__init__(timeout=60)
-        self.cog = cog
         self.author_id = str(author_id)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -139,23 +175,45 @@ class BlackjackView(discord.ui.View):
         for child in self.children:
             child.disabled = True
 
-    def build_game_embed(self, game: dict) -> discord.Embed:
+    def build_embed(self, game: dict, reveal_dealer: bool = False, result_text: str | None = None) -> discord.Embed:
         player_hand = game["player"]
         dealer_hand = game["dealer"]
+
         player_total = hand_value(player_hand)
+        dealer_total = hand_value(dealer_hand)
+
+        player_cards = combine_cards(player_hand, hide_second=False)
+        dealer_cards = combine_cards(dealer_hand, hide_second=not reveal_dealer)
+
+        desc = (
+            f"**Your Hand ({player_total})**\n"
+            f"```text\n{player_cards}\n```\n"
+        )
+
+        if reveal_dealer:
+            desc += (
+                f"**Dealer Hand ({dealer_total})**\n"
+                f"```text\n{dealer_cards}\n```"
+            )
+        else:
+            shown_total = card_value(dealer_hand[0])
+            desc += (
+                f"**Dealer Hand ({shown_total}+?)**\n"
+                f"```text\n{dealer_cards}\n```"
+            )
+
+        if result_text:
+            desc += f"\n{result_text}"
 
         embed = discord.Embed(
             title="Blackjack",
-            description=(
-                f"Your hand: {format_hand(player_hand)}  ({player_total})\n"
-                f"Dealer hand: `{dealer_hand[0]}  ?`\n"
-            ),
+            description=desc,
             color=EMBED_COLOR
         )
         embed.add_field(name="Bet", value=f"`{game['bet']}`", inline=False)
         return embed
 
-    async def end_game(self, interaction: discord.Interaction, *, embed: discord.Embed):
+    async def finish_game(self, interaction: discord.Interaction, embed: discord.Embed):
         for child in self.children:
             child.disabled = True
         await interaction.response.edit_message(embed=embed, view=self)
@@ -170,27 +228,23 @@ class BlackjackView(discord.ui.View):
             return await interaction.response.edit_message(view=self)
 
         game["player"].append(draw_card())
-        value = hand_value(game["player"])
+        player_total = hand_value(game["player"])
 
-        if value > 21:
+        if player_total > 21:
             coins = load_coins()
             user = ensure_user(coins, self.author_id)
 
-            embed = discord.Embed(
-                title="Blackjack Result",
-                description=(
-                    f"Your hand: {format_hand(game['player'])}  ({value})\n"
-                    f"Dealer hand: `{game['dealer'][0]}  ?`\n\n"
-                    f"Bust. You lost **{game['bet']}** coins."
-                ),
-                color=EMBED_COLOR
+            embed = self.build_embed(
+                game,
+                reveal_dealer=False,
+                result_text=f"**Bust.** You lost **{game['bet']}** coins."
             )
             embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
 
             BLACKJACK_GAMES.pop(self.author_id, None)
-            return await self.end_game(interaction, embed=embed)
+            return await self.finish_game(interaction, embed)
 
-        embed = self.build_game_embed(game)
+        embed = self.build_embed(game, reveal_dealer=False)
         await interaction.response.edit_message(embed=embed, view=self)
 
         reminder = discord.Embed(
@@ -208,54 +262,43 @@ class BlackjackView(discord.ui.View):
                 child.disabled = True
             return await interaction.response.edit_message(view=self)
 
-        player_hand = list(game["player"])
-        dealer_hand = list(game["dealer"])
-        bet = int(game["bet"])
+        player_val = hand_value(game["player"])
 
-        player_val = hand_value(player_hand)
+        while hand_value(game["dealer"]) < 17:
+            game["dealer"].append(draw_card())
 
-        while hand_value(dealer_hand) < 17:
-            dealer_hand.append(draw_card())
-
-        dealer_val = hand_value(dealer_hand)
+        dealer_val = hand_value(game["dealer"])
 
         coins = load_coins()
         user = ensure_user(coins, self.author_id)
+        bet = int(game["bet"])
 
         if dealer_val > 21 or player_val > dealer_val:
             winnings = bet * 2
             user["wallet"] += winnings
-            msg = f"You won **{winnings}** coins."
+            result_text = f"**You won {winnings} coins.**"
         elif player_val == dealer_val:
             user["wallet"] += bet
-            msg = f"Push. Your **{bet}** coins were returned."
+            result_text = f"**Push.** Your **{bet}** coins were returned."
         else:
-            msg = "Dealer wins."
+            result_text = "**Dealer wins.**"
 
         save_coins(coins)
-        BLACKJACK_GAMES.pop(self.author_id, None)
 
-        embed = discord.Embed(
-            title="Blackjack Result",
-            description=(
-                f"Your hand: {format_hand(player_hand)}  ({player_val})\n"
-                f"Dealer hand: {format_hand(dealer_hand)}  ({dealer_val})\n\n"
-                f"{msg}"
-            ),
-            color=EMBED_COLOR
+        embed = self.build_embed(
+            game,
+            reveal_dealer=True,
+            result_text=result_text
         )
         embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
 
-        await self.end_game(interaction, embed=embed)
+        BLACKJACK_GAMES.pop(self.author_id, None)
+        await self.finish_game(interaction, embed)
 
 
 class Games(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-
-    # -------------------------
-    # COINFLIP
-    # -------------------------
 
     @commands.hybrid_command(
         name="coinflip",
@@ -270,10 +313,6 @@ class Games(commands.Cog):
             color=EMBED_COLOR
         )
         await ctx.send(embed=embed)
-
-    # -------------------------
-    # GAMBLE
-    # -------------------------
 
     @commands.hybrid_command(
         name="gamble",
@@ -303,10 +342,7 @@ class Games(commands.Cog):
 
         embed = discord.Embed(
             title="Place Your Bet",
-            description=(
-                f"Bet: **{bet}** coins\n\n"
-                f"Choose **Red** or **Black**."
-            ),
+            description=f"Bet: **{bet}** coins\n\nChoose **Red** or **Black**.",
             color=EMBED_COLOR
         )
         embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
@@ -319,10 +355,6 @@ class Games(commands.Cog):
         )
 
         await ctx.send(embed=embed, view=view)
-
-    # -------------------------
-    # BLACKJACK START
-    # -------------------------
 
     @commands.hybrid_command(
         name="blackjack",
@@ -376,37 +408,30 @@ class Games(commands.Cog):
             if dealer_total != 21:
                 winnings = amount * 2
                 user["wallet"] += winnings
-                result_msg = f"Natural blackjack. You won **{winnings}** coins."
+                result_text = f"**Natural blackjack.** You won **{winnings}** coins."
             else:
                 user["wallet"] += amount
-                result_msg = f"Push. Both hands hit blackjack. Your **{amount}** coins were returned."
+                result_text = f"**Push.** Both hands hit blackjack. Your **{amount}** coins were returned."
 
             save_coins(coins)
             BLACKJACK_GAMES.pop(uid, None)
 
-            embed = discord.Embed(
-                title="Blackjack Result",
-                description=(
-                    f"Your hand: {format_hand(player)}  ({player_total})\n"
-                    f"Dealer hand: {format_hand(dealer)}  ({dealer_total})\n\n"
-                    f"{result_msg}"
-                ),
-                color=EMBED_COLOR
+            temp_game = {
+                "player": player,
+                "dealer": dealer,
+                "bet": amount
+            }
+            embed = BlackjackView(author_id=ctx.author.id).build_embed(
+                temp_game,
+                reveal_dealer=True,
+                result_text=result_text
             )
             embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
             return await ctx.send(embed=embed)
 
-        embed = discord.Embed(
-            title="Blackjack",
-            description=(
-                f"Your hand: {format_hand(player)}  ({player_total})\n"
-                f"Dealer hand: `{dealer[0]}  ?`\n"
-            ),
-            color=EMBED_COLOR
-        )
-        embed.add_field(name="Bet", value=f"`{amount}`", inline=False)
+        view = BlackjackView(author_id=ctx.author.id)
+        embed = view.build_embed(BLACKJACK_GAMES[uid], reveal_dealer=False)
 
-        view = BlackjackView(cog=self, author_id=ctx.author.id)
         await ctx.send(embed=embed, view=view)
 
 
