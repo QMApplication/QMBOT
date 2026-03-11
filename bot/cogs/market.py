@@ -161,7 +161,7 @@ class Stocks(commands.Cog):
         sign = "+" if change > 0 else ""
         embed = discord.Embed(
             title=stock_name,
-            description="Minimal market view",
+            description="Market View & Volatility",
             color=EMBED_COLOR
         )
         embed.add_field(name="Price", value=f"`{price}`", inline=True)
