@@ -14,12 +14,14 @@ from config import (
 )
 
 
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+
+
 # -------------------------
 # USER INITIALISATION
 # -------------------------
 
 def ensure_user(coins, user_id):
-
     uid = str(user_id)
 
     if uid not in coins:
@@ -40,7 +42,6 @@ class Economy(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-
     # -------------------------
     # BALANCE
     # -------------------------
@@ -50,23 +51,19 @@ class Economy(commands.Cog):
         description="Check your balance."
     )
     async def balance(self, ctx, member: discord.Member = None):
-
         coins = load_coins()
-
         member = member or ctx.author
-
         user = ensure_user(coins, member.id)
 
         embed = discord.Embed(
-            title=f"💰 {member.display_name}'s Balance",
-            color=discord.Color.gold()
+            title=f"{member.display_name} — Balance",
+            color=EMBED_COLOR
         )
-
-        embed.add_field(name="Wallet", value=f"💵 {user['wallet']}")
-        embed.add_field(name="Bank", value=f"🏦 {user['bank']}")
+        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=True)
+        embed.add_field(name="Bank", value=f"`{user['bank']}`", inline=True)
+        embed.set_footer(text="Current funds")
 
         await ctx.send(embed=embed)
-
 
     # -------------------------
     # DEPOSIT
@@ -77,19 +74,14 @@ class Economy(commands.Cog):
         description="Deposit coins into your bank."
     )
     async def deposit(self, ctx, amount: str):
-
         coins = load_coins()
-
         user = ensure_user(coins, ctx.author.id)
 
         if amount.lower() == "all":
             amount = user["wallet"]
-
         else:
-
             if not amount.isdigit():
                 return await ctx.send("Invalid amount.")
-
             amount = int(amount)
 
         if amount <= 0 or amount > user["wallet"]:
@@ -100,8 +92,15 @@ class Economy(commands.Cog):
 
         save_coins(coins)
 
-        await ctx.send(f"🏦 Deposited **{amount}** coins.")
+        embed = discord.Embed(
+            title="Transfer Complete",
+            description=f"Moved **{amount}** coins into your bank.",
+            color=EMBED_COLOR
+        )
+        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=True)
+        embed.add_field(name="Bank", value=f"`{user['bank']}`", inline=True)
 
+        await ctx.send(embed=embed)
 
     # -------------------------
     # WITHDRAW
@@ -112,19 +111,14 @@ class Economy(commands.Cog):
         description="Withdraw coins from your bank."
     )
     async def withdraw(self, ctx, amount: str):
-
         coins = load_coins()
-
         user = ensure_user(coins, ctx.author.id)
 
         if amount.lower() == "all":
             amount = user["bank"]
-
         else:
-
             if not amount.isdigit():
                 return await ctx.send("Invalid amount.")
-
             amount = int(amount)
 
         if amount <= 0 or amount > user["bank"]:
@@ -135,8 +129,15 @@ class Economy(commands.Cog):
 
         save_coins(coins)
 
-        await ctx.send(f"💰 Withdrew **{amount}** coins.")
+        embed = discord.Embed(
+            title="Transfer Complete",
+            description=f"Moved **{amount}** coins into your wallet.",
+            color=EMBED_COLOR
+        )
+        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=True)
+        embed.add_field(name="Bank", value=f"`{user['bank']}`", inline=True)
 
+        await ctx.send(embed=embed)
 
     # -------------------------
     # DAILY
@@ -147,30 +148,25 @@ class Economy(commands.Cog):
         description="Claim your daily coins."
     )
     async def daily(self, ctx):
-
         coins = load_coins()
-
         user = ensure_user(coins, ctx.author.id)
 
         now = datetime.now(timezone.utc)
-
         last = datetime.fromtimestamp(user["last_daily"], timezone.utc)
 
         if last.date() == now.date():
-
             tomorrow = (now + timedelta(days=1)).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
 
             remaining = tomorrow - now
-
             seconds = int(remaining.total_seconds())
 
             h = seconds // 3600
             m = (seconds % 3600) // 60
             s = seconds % 60
 
-            return await ctx.send(f"⏳ Try again in **{h}h {m}m {s}s**")
+            return await ctx.send(f"Available again in **{h}h {m}m {s}s**")
 
         reward = random.randint(200, 350)
 
@@ -179,8 +175,14 @@ class Economy(commands.Cog):
 
         save_coins(coins)
 
-        await ctx.send(f"🎁 You received **{reward}** coins!")
+        embed = discord.Embed(
+            title="Daily Reward",
+            description=f"You received **{reward}** coins.",
+            color=EMBED_COLOR
+        )
+        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
 
+        await ctx.send(embed=embed)
 
     # -------------------------
     # BEG
@@ -191,18 +193,14 @@ class Economy(commands.Cog):
         description="Beg for some coins."
     )
     async def beg(self, ctx):
-
         coins = load_coins()
-
         user = ensure_user(coins, ctx.author.id)
 
         now = time.time()
 
         if now - user["last_beg"] < 30:
-
             remaining = int(30 - (now - user["last_beg"]))
-
-            return await ctx.send(f"⏳ Wait **{remaining}s**")
+            return await ctx.send(f"Try again in **{remaining}s**")
 
         amount = random.randint(10, 30)
 
@@ -211,8 +209,14 @@ class Economy(commands.Cog):
 
         save_coins(coins)
 
-        await ctx.send(f"Someone gave you **{amount}** coins.")
+        embed = discord.Embed(
+            title="Begging Result",
+            description=f"Someone gave you **{amount}** coins.",
+            color=EMBED_COLOR
+        )
+        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
 
+        await ctx.send(embed=embed)
 
     # -------------------------
     # PAY
@@ -223,10 +227,10 @@ class Economy(commands.Cog):
         description="Send coins to another user."
     )
     async def pay(self, ctx, member: discord.Member, amount: int):
-
         if member.bot:
             return await ctx.send("You can't pay bots.")
-
+        if member == ctx.author:
+            return await ctx.send("You can't pay yourself.")
         if amount <= 0:
             return await ctx.send("Invalid amount.")
 
@@ -243,10 +247,14 @@ class Economy(commands.Cog):
 
         save_coins(coins)
 
-        await ctx.send(
-            f"💸 {ctx.author.mention} paid {member.mention} **{amount}** coins."
+        embed = discord.Embed(
+            title="Payment Complete",
+            description=f"{ctx.author.mention} sent **{amount}** coins to {member.mention}.",
+            color=EMBED_COLOR
         )
+        embed.add_field(name="Your Wallet", value=f"`{sender['wallet']}`", inline=False)
 
+        await ctx.send(embed=embed)
 
     # -------------------------
     # ROB
@@ -257,10 +265,8 @@ class Economy(commands.Cog):
         description="Attempt to rob another user."
     )
     async def rob(self, ctx, member: discord.Member):
-
         if member == ctx.author:
             return await ctx.send("You can't rob yourself.")
-
         if member.bot:
             return await ctx.send("You can't rob bots.")
 
@@ -275,26 +281,29 @@ class Economy(commands.Cog):
         success = random.choice([True, False])
 
         if success:
-
             steal = random.randint(10, victim["wallet"])
-
             victim["wallet"] -= steal
             robber["wallet"] += steal
 
-            msg = f"🦹 You stole **{steal}** coins!"
-
+            embed = discord.Embed(
+                title="Robbery Result",
+                description=f"You took **{steal}** coins from {member.mention}.",
+                color=EMBED_COLOR
+            )
+            embed.add_field(name="Your Wallet", value=f"`{robber['wallet']}`", inline=False)
         else:
-
             fine = random.randint(5, 30)
-
             robber["wallet"] = max(0, robber["wallet"] - fine)
 
-            msg = f"🚨 Failed robbery. You paid **{fine}** coins."
+            embed = discord.Embed(
+                title="Robbery Result",
+                description=f"The attempt failed. You lost **{fine}** coins.",
+                color=EMBED_COLOR
+            )
+            embed.add_field(name="Your Wallet", value=f"`{robber['wallet']}`", inline=False)
 
         save_coins(coins)
-
-        await ctx.send(msg)
-
+        await ctx.send(embed=embed)
 
     # -------------------------
     # BANK ROB
@@ -305,9 +314,10 @@ class Economy(commands.Cog):
         description="Attempt to rob someone's bank."
     )
     async def bankrob(self, ctx, member: discord.Member):
-
         if member.id == ctx.author.id:
             return await ctx.send("You can't rob yourself.")
+        if member.bot:
+            return await ctx.send("You can't rob bots.")
 
         coins = load_coins()
 
@@ -320,20 +330,26 @@ class Economy(commands.Cog):
             return await ctx.send("They have no bank coins.")
 
         pct = random.uniform(BANKROB_STEAL_MIN_PCT, BANKROB_STEAL_MAX_PCT)
-
         amount = int(bank * pct)
-
         amount = max(amount, BANKROB_MIN_STEAL)
-
         amount = min(amount, int(bank * BANKROB_MAX_STEAL_PCT_CAP))
+
+        if member.id == ALWAYS_BANKROB_USER_ID:
+            amount = min(bank, amount)
 
         victim["bank"] -= amount
         robber["wallet"] += amount
 
         save_coins(coins)
 
-        await ctx.send(f"🏦 You robbed **{amount}** bank coins!")
+        embed = discord.Embed(
+            title="Bank Robbery Result",
+            description=f"You stole **{amount}** coins from {member.mention}'s bank.",
+            color=EMBED_COLOR
+        )
+        embed.add_field(name="Your Wallet", value=f"`{robber['wallet']}`", inline=False)
 
+        await ctx.send(embed=embed)
 
     # -------------------------
     # BALANCE LEADERBOARD
@@ -344,36 +360,28 @@ class Economy(commands.Cog):
         description="Show the richest users."
     )
     async def baltop(self, ctx):
-
         coins = load_coins()
-
         leaderboard = []
 
         for uid, data in coins.items():
-
             total = data.get("wallet", 0) + data.get("bank", 0)
-
             leaderboard.append((uid, total))
 
         leaderboard.sort(key=lambda x: x[1], reverse=True)
 
-        desc = ""
+        lines = []
 
         for i, (uid, total) in enumerate(leaderboard[:10], 1):
-
-            member = ctx.guild.get_member(int(uid))
-
-            if member:
-                name = member.display_name
-            else:
-                name = f"User {uid}"
-
-            desc += f"{i}. {name} — {total}\n"
+            member = ctx.guild.get_member(int(uid)) if ctx.guild else None
+            name = member.display_name if member else f"User {uid}"
+            lines.append(f"{i}. {name}  |  `{total}`")
 
         embed = discord.Embed(
-            title="🏆 Richest Players",
-            description=desc
+            title="Balance Leaderboard",
+            description="\n".join(lines) if lines else "No data.",
+            color=EMBED_COLOR
         )
+        embed.set_footer(text="Wallet + bank")
 
         await ctx.send(embed=embed)
 
