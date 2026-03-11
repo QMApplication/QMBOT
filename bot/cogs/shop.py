@@ -5,6 +5,9 @@ from storage import load_coins, save_coins, load_inventory, save_inventory
 from config import SHOP_ITEMS, ITEM_PRICES
 
 
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+
+
 def ensure_user(coins: dict, user_id: int | str) -> dict:
     uid = str(user_id)
 
@@ -39,17 +42,18 @@ class Shop(commands.Cog):
         description="View the shop."
     )
     async def shop(self, ctx: commands.Context):
-        desc = ""
+        lines = []
 
         for item in SHOP_ITEMS:
             price = ITEM_PRICES.get(item, 0)
-            desc += f"**{item}** — {price} coins\n"
+            lines.append(f"• **{item}**  |  `{price}`")
 
         embed = discord.Embed(
-            title="🛒 Shop",
-            description=desc,
-            color=discord.Color.green()
+            title="Shop",
+            description="\n".join(lines) if lines else "No items available.",
+            color=EMBED_COLOR
         )
+        embed.set_footer(text="Item prices")
 
         await ctx.send(embed=embed)
 
@@ -84,7 +88,15 @@ class Shop(commands.Cog):
         save_coins(coins)
         save_inventory(inv)
 
-        await ctx.send(f"🛒 Bought **{item}**.")
+        embed = discord.Embed(
+            title="Purchase Complete",
+            description=f"Bought **{item}**.",
+            color=EMBED_COLOR
+        )
+        embed.add_field(name="Cost", value=f"`{price}`", inline=True)
+        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=True)
+
+        await ctx.send(embed=embed)
 
     # -------------------------
     # INVENTORY
@@ -103,16 +115,17 @@ class Shop(commands.Cog):
         if not user_inv:
             return await ctx.send("Inventory empty.")
 
-        desc = ""
+        lines = []
 
         for item, qty in user_inv.items():
-            desc += f"{item} x{qty}\n"
+            lines.append(f"• **{item}**  |  x{qty}")
 
         embed = discord.Embed(
-            title=f"{member.display_name}'s Inventory",
-            description=desc,
-            color=discord.Color.blue()
+            title=f"{member.display_name} — Inventory",
+            description="\n".join(lines),
+            color=EMBED_COLOR
         )
+        embed.set_footer(text="Stored items")
 
         await ctx.send(embed=embed)
 
