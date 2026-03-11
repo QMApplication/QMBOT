@@ -56,8 +56,8 @@ class Economy(commands.Cog):
             description="Current funds",
             color=EMBED_COLOR
         )
-        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=True)
-        embed.add_field(name="♕ QMBank", value=f"`{user['bank']}`", inline=True)
+        embed.add_field(name="¢ Wallet        |", value=f"`{user['wallet']}`", inline=True)
+        embed.add_field(name="♕ QMBank        ", value=f"`{user['bank']}`", inline=True)
 
         await ctx.send(embed=embed)
 
@@ -130,8 +130,8 @@ class Economy(commands.Cog):
             description=f"Moved **{amount}** coins into your wallet.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=True)
-        embed.add_field(name="♕ QMBank", value=f"`{user['bank']}`", inline=True)
+        embed.add_field(name="¢ Wallet    ", value=f"`{user['wallet']}`", inline=True)
+        embed.add_field(name="♕ QMBank    ", value=f"`{user['bank']}`", inline=True)
 
         await ctx.send(embed=embed)
 
@@ -176,7 +176,7 @@ class Economy(commands.Cog):
             description=f"You received **{reward}** coins.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
+        embed.add_field(name="¢ Wallet    ", value=f"`{user['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -210,7 +210,7 @@ class Economy(commands.Cog):
             description=f"Someone gave you **{amount}** coins.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
+        embed.add_field(name="¢ Wallet    ", value=f"`{user['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -248,7 +248,7 @@ class Economy(commands.Cog):
             description=f"{ctx.author.mention} sent **{amount}** coins to {member.mention}.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="¢ Wallet", value=f"`{sender['wallet']}`", inline=False)
+        embed.add_field(name="¢ Wallet    ", value=f"`{sender['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -296,7 +296,7 @@ class Economy(commands.Cog):
                 description=f"The attempt failed. You lost **{fine}** coins.",
                 color=EMBED_COLOR
             )
-            embed.add_field(name="¢ Wallet", value=f"`{robber['wallet']}`", inline=False)
+            embed.add_field(name="¢ Wallet    ", value=f"`{robber['wallet']}`", inline=False)
 
         save_coins(coins)
         await ctx.send(embed=embed)
@@ -343,7 +343,7 @@ class Economy(commands.Cog):
             description=f"You stole **{amount}** coins from {member.mention}'s **QMBank**.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="¢ Wallet", value=f"`{robber['wallet']}`", inline=False)
+        embed.add_field(name="¢ Wallet    ", value=f"`{robber['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -360,27 +360,47 @@ class Economy(commands.Cog):
         leaderboard = []
 
         for uid, data in coins.items():
-            total = data.get("wallet", 0) + data.get("bank", 0)
-            leaderboard.append((uid, total))
+            wallet = data.get("wallet", 0)
+            bank = data.get("bank", 0)
+            total = wallet + bank
 
-        leaderboard.sort(key=lambda x: x[1], reverse=True)
+            leaderboard.append((uid, wallet, bank, total))
 
-        lines = []
+        leaderboard.sort(key=lambda x: x[3], reverse=True)
 
-        for i, (uid, total) in enumerate(leaderboard[:10], 1):
+        rows = []
+
+        for i, (uid, wallet, bank, total) in enumerate(leaderboard[:10], 1):
+
             member = ctx.guild.get_member(int(uid)) if ctx.guild else None
             name = member.display_name if member else f"User {uid}"
-            lines.append(f"{i}. {name}  |  `{total}`")
+
+            name = name[:16]  # prevent overflow
+
+            you = " ⋆ YOU" if int(uid) == ctx.author.id else ""
+
+            row = (
+                f"{str(i).rjust(2)} "
+                f"{name.ljust(16)} "
+                f"{str(wallet).rjust(7)} | "
+                f"{str(bank).rjust(7)} | "
+                f"{str(total).rjust(8)}{you}"
+            )
+
+            rows.append(row)
+
+        table = "```\n"
+        table += " # Name             ¢Wallet | ♕QMBank | Total\n"
+        table += "\n".join(rows)
+        table += "\n```"
 
         embed = discord.Embed(
             title="Balance Leaderboard",
-            description="\n".join(lines) if lines else "No data.",
+            description=table,
             color=EMBED_COLOR
         )
-        embed.set_footer(text="¢ Wallet + ♕ QMBank")
 
         await ctx.send(embed=embed)
-
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
