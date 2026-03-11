@@ -57,7 +57,7 @@ def render_card(card: str) -> list[str]:
     return [
         "+-----+",
         f"|{suit:<5}|",
-        f"|{center}|",
+        f"| {center} |",
         f"|{suit:>5}|",
         "+-----+",
     ]
