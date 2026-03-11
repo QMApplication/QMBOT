@@ -52,40 +52,39 @@ def hand_value(hand: list[str]) -> int:
 def render_card(card: str) -> list[str]:
     rank = card[:-1]
     suit = card[-1]
-
-    middle = rank.center(3)
+    center = rank.center(3)
 
     return [
-        "┌─────┐",
-        f"│{suit:<5}│",
-        f"│{middle}│",
-        f"│{suit:>5}│",
-        "└─────┘",
+        "+-----+",
+        f"|{suit:<5}|",
+        f"|{center}|",
+        f"|{suit:>5}|",
+        "+-----+",
     ]
 
 
 def render_hidden_card() -> list[str]:
     return [
-        "┌─────┐",
-        "│     │",
-        "│ QM  │",
-        "│     │",
-        "└─────┘",
+        "+-----+",
+        "|     |",
+        "|  ♔  |",
+        "|     |",
+        "+-----+",
     ]
 
 
 def combine_cards(cards: list[str], hide_second: bool = False) -> str:
-    rendered = []
+    rendered_cards = []
 
     for i, card in enumerate(cards):
         if hide_second and i == 1:
-            rendered.append(render_hidden_card())
+            rendered_cards.append(render_hidden_card())
         else:
-            rendered.append(render_card(card))
+            rendered_cards.append(render_card(card))
 
     lines = []
     for row in range(5):
-        lines.append(" ".join(card[row] for card in rendered))
+        lines.append("  ".join(card[row] for card in rendered_cards))
 
     return "\n".join(lines)
 
@@ -175,7 +174,12 @@ class BlackjackView(discord.ui.View):
         for child in self.children:
             child.disabled = True
 
-    def build_embed(self, game: dict, reveal_dealer: bool = False, result_text: str | None = None) -> discord.Embed:
+    def build_embed(
+        self,
+        game: dict,
+        reveal_dealer: bool = False,
+        result_text: str | None = None
+    ) -> discord.Embed:
         player_hand = game["player"]
         dealer_hand = game["dealer"]
 
@@ -185,22 +189,18 @@ class BlackjackView(discord.ui.View):
         player_cards = combine_cards(player_hand, hide_second=False)
         dealer_cards = combine_cards(dealer_hand, hide_second=not reveal_dealer)
 
+        if reveal_dealer:
+            dealer_label = f"Dealer Hand ({dealer_total})"
+        else:
+            shown_total = card_value(dealer_hand[0])
+            dealer_label = f"Dealer Hand ({shown_total}+?)"
+
         desc = (
             f"**Your Hand ({player_total})**\n"
             f"```text\n{player_cards}\n```\n"
+            f"**{dealer_label}**\n"
+            f"```text\n{dealer_cards}\n```"
         )
-
-        if reveal_dealer:
-            desc += (
-                f"**Dealer Hand ({dealer_total})**\n"
-                f"```text\n{dealer_cards}\n```"
-            )
-        else:
-            shown_total = card_value(dealer_hand[0])
-            desc += (
-                f"**Dealer Hand ({shown_total}+?)**\n"
-                f"```text\n{dealer_cards}\n```"
-            )
 
         if result_text:
             desc += f"\n{result_text}"
@@ -210,7 +210,7 @@ class BlackjackView(discord.ui.View):
             description=desc,
             color=EMBED_COLOR
         )
-        embed.add_field(name="Bet", value=f"`{game['bet']}`", inline=False)
+        embed.add_field(name="Bet", value=f"`{game['bet']}`", inline=True)
         return embed
 
     async def finish_game(self, interaction: discord.Interaction, embed: discord.Embed):
