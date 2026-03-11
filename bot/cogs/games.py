@@ -49,45 +49,40 @@ def hand_value(hand: list[str]) -> int:
     return total
 
 
-def render_card(card: str) -> list[str]:
+def render_card(card: str) -> str:
     rank = card[:-1]
     suit = card[-1]
-
     middle = rank.center(3)
 
-    return [
+    return "\n".join([
         "┌─────┐",
         f"│{suit:<5}│",
         f"│ {middle} │",
         f"│{suit:>5}│",
         "└─────┘",
-    ]
+    ])
 
 
-def render_hidden_card() -> list[str]:
-    return [
+def render_hidden_card() -> str:
+    return "\n".join([
         "┌─────┐",
         "│     │",
         "│  ♔  │",
         "│     │",
         "└─────┘",
-    ]
+    ])
 
 
-def combine_cards(cards: list[str], hide_second: bool = False) -> str:
-    rendered_cards = []
+def vertical_hand(cards: list[str], hide_second: bool = False) -> str:
+    rendered = []
 
     for i, card in enumerate(cards):
         if hide_second and i == 1:
-            rendered_cards.append(render_hidden_card())
+            rendered.append(render_hidden_card())
         else:
-            rendered_cards.append(render_card(card))
+            rendered.append(render_card(card))
 
-    lines = []
-    for row in range(5):
-        lines.append("  ".join(card[row] for card in rendered_cards))
-
-    return "\n".join(lines)
+    return "\n\n".join(rendered)
 
 
 class GambleView(discord.ui.View):
@@ -118,29 +113,31 @@ class GambleView(discord.ui.View):
             winnings = self.bet * 2
             self.user["wallet"] += winnings
 
-            embed = discord.Embed(
-                title="Gamble Result",
-                description=(
-                    f"Choice: **{choice.title()}**\n"
-                    f"Result: **{result.title()}**\n\n"
-                    f"You won **{winnings}** coins."
-                ),
-                color=EMBED_COLOR
-            )
+            lines = [
+                "Result",
+                "------",
+                f"Choice  | {choice.title()}",
+                f"Spin    | {result.title()}",
+                f"Win     | +{winnings}",
+                f"Wallet  | {self.user['wallet']}",
+            ]
         else:
-            embed = discord.Embed(
-                title="Gamble Result",
-                description=(
-                    f"Choice: **{choice.title()}**\n"
-                    f"Result: **{result.title()}**\n\n"
-                    f"You lost **{self.bet}** coins."
-                ),
-                color=EMBED_COLOR
-            )
-
-        embed.add_field(name="¢ Wallet", value=f"`{self.user['wallet']}`", inline=False)
+            lines = [
+                "Result",
+                "------",
+                f"Choice  | {choice.title()}",
+                f"Spin    | {result.title()}",
+                f"Lose    | -{self.bet}",
+                f"Wallet  | {self.user['wallet']}",
+            ]
 
         save_coins(self.coins)
+
+        embed = discord.Embed(
+            title="Gamble",
+            description="```text\n" + "\n".join(lines) + "\n```",
+            color=EMBED_COLOR
+        )
 
         for child in self.children:
             child.disabled = True
@@ -187,8 +184,8 @@ class BlackjackView(discord.ui.View):
         player_total = hand_value(player_hand)
         dealer_total = hand_value(dealer_hand)
 
-        player_cards = combine_cards(player_hand, hide_second=False)
-        dealer_cards = combine_cards(dealer_hand, hide_second=not reveal_dealer)
+        player_cards = vertical_hand(player_hand, hide_second=False)
+        dealer_cards = vertical_hand(dealer_hand, hide_second=not reveal_dealer)
 
         if reveal_dealer:
             dealer_label = f"Dealer Hand ({dealer_total})"
@@ -196,22 +193,36 @@ class BlackjackView(discord.ui.View):
             shown_total = card_value(dealer_hand[0])
             dealer_label = f"Dealer Hand ({shown_total}+?)"
 
-        desc = (
-            f"**Your Hand ({player_total})**\n"
-            f"```text\n{player_cards}\n```\n"
-            f"**{dealer_label}**\n"
-            f"```text\n{dealer_cards}\n```"
+        embed = discord.Embed(
+            title="Blackjack",
+            color=EMBED_COLOR
+        )
+
+        embed.add_field(
+            name=f"Your Hand ({player_total})",
+            value=f"```text\n{player_cards}\n```",
+            inline=True
+        )
+
+        embed.add_field(
+            name=dealer_label,
+            value=f"```text\n{dealer_cards}\n```",
+            inline=True
+        )
+
+        embed.add_field(
+            name="Bet",
+            value=f"`{game['bet']}`",
+            inline=False
         )
 
         if result_text:
-            desc += f"\n{result_text}"
+            embed.add_field(
+                name="Result",
+                value=result_text,
+                inline=False
+            )
 
-        embed = discord.Embed(
-            title="Blackjack",
-            description=desc,
-            color=EMBED_COLOR
-        )
-        embed.add_field(name="Bet", value=f"`{game['bet']}`", inline=True)
         return embed
 
     async def finish_game(self, interaction: discord.Interaction, embed: discord.Embed):
@@ -341,12 +352,23 @@ class Games(commands.Cog):
         user["wallet"] -= bet
         save_coins(coins)
 
+        lines = [
+            "Session",
+            "------",
+            f"Bet     | {bet}",
+            f"Wallet  | {user['wallet']}",
+            "",
+            "Pick one",
+            "--------",
+            "Red     | High risk",
+            "Black   | High risk",
+        ]
+
         embed = discord.Embed(
-            title="Place Your Bet",
-            description=f"Bet: **{bet}** coins\n\nChoose **Red** or **Black**.",
+            title="Gamble",
+            description="```text\n" + "\n".join(lines) + "\n```",
             color=EMBED_COLOR
         )
-        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
 
         view = GambleView(
             author_id=ctx.author.id,
