@@ -32,8 +32,6 @@ ANNOUNCEMENT_CHANNEL_ID = 1477047361749520516
 WELCOME_CHANNEL_ID = 1477047423284281435
 MARKET_ANNOUNCE_CHANNEL_ID = 1477047525902123199
 SUGGESTION_CHANNEL_ID = 1477047592910196756
-
-# From your original XP milestone code
 LEVEL_ANNOUNCE_CHANNEL_ID = 1433417692320239666
 
 TOP_ROLE_NAME = "🌟 EXP Top"
@@ -99,12 +97,10 @@ SHOP_SELLBACK_RATE = 0.50
 # =========================
 STOCKS = ["Oreobux", "QMkoin", "Seelsterling", "Fwizfinance", "BingBux"]
 
-# Settlement / cooldown / anti-spam controls
-STOCK_SETTLEMENT_SECONDS = 10 * 60
+# These are still safe to keep for future expansion,
+# even if your current market cog is simpler.
 STOCK_TRADE_COOLDOWN_SECONDS = 5 * 60
 STOCK_DAILY_TRADE_LIMIT = 20
-
-# Execution model
 STOCK_SPREAD_BPS = 200
 STOCK_FEE_FLAT = 10
 STOCK_FEE_RATE = 0.01
@@ -178,7 +174,6 @@ PRICE_FLOOR = 1
 # Rob / Bankrob
 # =========================
 ALWAYS_BANKROB_USER_ID = 734468552903360594
-
 BANKROB_STEAL_MIN_PCT = 0.12
 BANKROB_STEAL_MAX_PCT = 0.28
 BANKROB_MIN_STEAL = 100
@@ -195,8 +190,6 @@ SWEAR_FINE_AMOUNT = 10
 # =========================
 MC_NAME = "QMUL Survival"
 MC_ADDRESS = "185.206.150.153"
-
-# Keep None unless you truly know the Java port and are not using SRV
 MC_JAVA_PORT = None
 
 MC_MODRINTH_URL = ""
