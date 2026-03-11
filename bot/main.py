@@ -20,6 +20,9 @@ INITIAL_EXTENSIONS = [
     "cogs.admin",
     "cogs.mc",
     "cogs.coverbot",
+    "cogs.market",
+    "cogs.shop",
+    "cogs.social",
     "cogs.tasks",
 ]
 
@@ -49,7 +52,6 @@ class QMULBot(commands.Bot):
             except Exception as e:
                 print(f"[Cog] Skipped {ext}: {type(e).__name__}: {e}")
 
-        # Sync slash / hybrid commands to Discord
         try:
             synced = await self.tree.sync()
             print(f"[Slash] Synced {len(synced)} global command(s).")
