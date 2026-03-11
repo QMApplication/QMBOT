@@ -4,6 +4,17 @@ from discord.ext import commands
 from storage import load_swear_jar, save_swear_jar
 
 
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+
+
+def make_embed(title: str, description: str):
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=EMBED_COLOR
+    )
+
+
 class SwearJar(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
@@ -22,10 +33,9 @@ class SwearJar(commands.Cog):
         jar = load_swear_jar()
         total = jar.get("total", 0)
 
-        embed = discord.Embed(
-            title="🫙 Swear Jar",
-            description=f"Total swears recorded: **{total}**",
-            color=discord.Color.orange()
+        embed = make_embed(
+            "🫙 Swear Jar",
+            f"Total swears recorded: **{total}**"
         )
 
         await ctx.send(embed=embed)
@@ -44,7 +54,12 @@ class SwearJar(commands.Cog):
         users = jar.get("users", {})
 
         if not users:
-            return await ctx.send("No swears recorded yet.")
+            return await ctx.send(
+                embed=make_embed(
+                    "Swear Leaderboard",
+                    "No swears recorded yet."
+                )
+            )
 
         sorted_users = sorted(
             users.items(),
@@ -52,7 +67,7 @@ class SwearJar(commands.Cog):
             reverse=True
         )
 
-        desc = ""
+        lines = []
 
         for i, (uid, data) in enumerate(sorted_users[:10], start=1):
 
@@ -64,12 +79,11 @@ class SwearJar(commands.Cog):
 
             count = data.get("count", 0)
 
-            desc += f"**{i}. {name}** — {count}\n"
+            lines.append(f"**{i}. {name}** — `{count}`")
 
-        embed = discord.Embed(
-            title="🧼 Swear Leaderboard",
-            description=desc,
-            color=discord.Color.red()
+        embed = make_embed(
+            "🧼 Swear Leaderboard",
+            "\n".join(lines)
         )
 
         await ctx.send(embed=embed)
@@ -90,7 +104,12 @@ class SwearJar(commands.Cog):
             "users": {}
         })
 
-        await ctx.send("🧹 Swear jar has been reset.")
+        await ctx.send(
+            embed=make_embed(
+                "Swear Jar Reset",
+                "🧹 The swear jar has been reset."
+            )
+        )
 
     # -------------------------
     # SWEAR FINE
@@ -108,10 +127,9 @@ class SwearJar(commands.Cog):
         uid = str(ctx.author.id)
         count = users.get(uid, {}).get("count", 0)
 
-        embed = discord.Embed(
-            title="💰 Your Swear Count",
-            description=f"You have sworn **{count}** times.",
-            color=discord.Color.orange()
+        embed = make_embed(
+            "💰 Your Swear Count",
+            f"You have sworn **{count}** times."
         )
 
         await ctx.send(embed=embed)
