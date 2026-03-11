@@ -12,6 +12,14 @@ from config import STOCKS
 EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 
+def make_embed(title: str, description: str):
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=EMBED_COLOR
+    )
+
+
 def ensure_user(coins, user_id):
     uid = str(user_id)
 
@@ -72,7 +80,7 @@ class Stocks(commands.Cog):
         key = stock.lower().strip()
 
         if key not in stock_names:
-            return await ctx.send("Unknown stock.")
+            return await ctx.send(embed=make_embed("Market", "Unknown stock."))
 
         stock_name = stock_names[key]
 
@@ -80,7 +88,7 @@ class Stocks(commands.Cog):
         data = stocks.get(stock_name)
 
         if not data:
-            return await ctx.send("Unknown stock.")
+            return await ctx.send(embed=make_embed("Market", "Unknown stock."))
 
         price = int(data.get("price", 0))
         history = data.get("history", []) or []
@@ -227,10 +235,10 @@ class Stocks(commands.Cog):
         key = stock.lower().strip()
 
         if key not in stock_names:
-            return await ctx.send("Unknown stock.")
+            return await ctx.send(embed=make_embed("Market", "Unknown stock."))
 
         if amount <= 0:
-            return await ctx.send("Invalid amount.")
+            return await ctx.send(embed=make_embed("Market", "Invalid amount."))
 
         stock_name = stock_names[key]
 
@@ -242,7 +250,7 @@ class Stocks(commands.Cog):
         user = ensure_user(coins, ctx.author.id)
 
         if user["wallet"] < cost:
-            return await ctx.send("Not enough coins.")
+            return await ctx.send(embed=make_embed("Market", "Not enough coins."))
 
         user["wallet"] -= cost
 
@@ -279,10 +287,10 @@ class Stocks(commands.Cog):
         key = stock.lower().strip()
 
         if key not in stock_names:
-            return await ctx.send("Unknown stock.")
+            return await ctx.send(embed=make_embed("Market", "Unknown stock."))
 
         if amount <= 0:
-            return await ctx.send("Invalid amount.")
+            return await ctx.send(embed=make_embed("Market", "Invalid amount."))
 
         stock_name = stock_names[key]
 
@@ -293,7 +301,7 @@ class Stocks(commands.Cog):
         owned = int(pf.get(stock_name, 0))
 
         if owned < amount:
-            return await ctx.send("Not enough shares.")
+            return await ctx.send(embed=make_embed("Market", "Not enough shares."))
 
         stocks = load_stocks()
         price = int(stocks.get(stock_name, {}).get("price", 0))
@@ -319,5 +327,5 @@ class Stocks(commands.Cog):
         await ctx.send(embed=embed)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot):
     await bot.add_cog(Stocks(bot))
