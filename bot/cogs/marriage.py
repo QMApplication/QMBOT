@@ -5,8 +5,19 @@ from discord.ext import commands
 
 from storage import load_marriages, save_marriages
 
+
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+
 # target_id -> proposer_id
 MARRIAGE_PROPOSALS: dict[str, str] = {}
+
+
+def make_embed(title: str, description: str) -> discord.Embed:
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=EMBED_COLOR
+    )
 
 
 class Marriage(commands.Cog):
@@ -19,24 +30,40 @@ class Marriage(commands.Cog):
     )
     async def marry(self, ctx: commands.Context, member: discord.Member):
         if member == ctx.author:
-            return await ctx.send("❌ You can't marry yourself!")
+            return await ctx.send(
+                embed=make_embed("Marriage", "❌ You can't marry yourself!")
+            )
+
         if member.bot:
-            return await ctx.send("🤖 You can't marry a bot.")
+            return await ctx.send(
+                embed=make_embed("Marriage", "🤖 You can't marry a bot.")
+            )
 
         marriages = load_marriages()
         author_id = str(ctx.author.id)
         target_id = str(member.id)
 
         if marriages.get(author_id) or marriages.get(target_id):
-            return await ctx.send("💔 One of you is already married.")
+            return await ctx.send(
+                embed=make_embed("Marriage", "💔 One of you is already married.")
+            )
 
         if target_id in MARRIAGE_PROPOSALS:
-            return await ctx.send("⏳ That person already has a pending proposal. Please wait.")
+            return await ctx.send(
+                embed=make_embed(
+                    "Marriage",
+                    "⏳ That person already has a pending proposal. Please wait."
+                )
+            )
 
         MARRIAGE_PROPOSALS[target_id] = author_id
+
         await ctx.send(
-            f"💍 {ctx.author.mention} has proposed to {member.mention}!\n"
-            f"{member.mention}, type `/accept` or `!accept` to say yes!"
+            embed=make_embed(
+                "Proposal Sent",
+                f"💍 {ctx.author.mention} has proposed to {member.mention}!\n"
+                f"{member.mention}, type `/accept` or `!accept` to say yes!"
+            )
         )
 
     @commands.hybrid_command(
@@ -48,13 +75,17 @@ class Marriage(commands.Cog):
         proposer_id = MARRIAGE_PROPOSALS.get(user_id)
 
         if not proposer_id:
-            return await ctx.send("❌ You don't have any pending proposals.")
+            return await ctx.send(
+                embed=make_embed("Marriage", "❌ You don't have any pending proposals.")
+            )
 
         marriages = load_marriages()
 
         if marriages.get(proposer_id) or marriages.get(user_id):
             MARRIAGE_PROPOSALS.pop(user_id, None)
-            return await ctx.send("💔 One of you is already married.")
+            return await ctx.send(
+                embed=make_embed("Marriage", "💔 One of you is already married.")
+            )
 
         marriages[proposer_id] = user_id
         marriages[user_id] = proposer_id
@@ -66,8 +97,14 @@ class Marriage(commands.Cog):
         except Exception:
             proposer_mention = f"<@{proposer_id}>"
 
-        await ctx.send(f"💞 {ctx.author.mention} and {proposer_mention} are now married! 🎉")
         MARRIAGE_PROPOSALS.pop(user_id, None)
+
+        await ctx.send(
+            embed=make_embed(
+                "Marriage Confirmed",
+                f"💞 {ctx.author.mention} and {proposer_mention} are now married! 🎉"
+            )
+        )
 
     @commands.hybrid_command(
         name="divorce",
@@ -79,7 +116,9 @@ class Marriage(commands.Cog):
         partner_id = marriages.get(user_id)
 
         if not partner_id:
-            return await ctx.send("❌ You are not married.")
+            return await ctx.send(
+                embed=make_embed("Marriage", "❌ You are not married.")
+            )
 
         marriages.pop(user_id, None)
         marriages.pop(partner_id, None)
@@ -91,7 +130,12 @@ class Marriage(commands.Cog):
         except Exception:
             partner_mention = f"<@{partner_id}>"
 
-        await ctx.send(f"💔 {ctx.author.mention} and {partner_mention} are now divorced.")
+        await ctx.send(
+            embed=make_embed(
+                "Divorce Complete",
+                f"💔 {ctx.author.mention} and {partner_mention} are now divorced."
+            )
+        )
 
     @commands.hybrid_command(
         name="partner",
@@ -103,7 +147,9 @@ class Marriage(commands.Cog):
         partner_id = marriages.get(str(member.id))
 
         if not partner_id:
-            return await ctx.send(f"{member.display_name} is not married.")
+            return await ctx.send(
+                embed=make_embed("Partner", f"{member.display_name} is not married.")
+            )
 
         try:
             partner_user = await self.bot.fetch_user(int(partner_id))
@@ -111,7 +157,12 @@ class Marriage(commands.Cog):
         except Exception:
             partner_name = "Unknown User"
 
-        await ctx.send(f"💗 {member.display_name}'s partner is **{partner_name}**.")
+        await ctx.send(
+            embed=make_embed(
+                "Partner",
+                f"💗 {member.display_name}'s partner is **{partner_name}**."
+            )
+        )
 
     @commands.hybrid_command(
         name="flirt",
@@ -119,9 +170,14 @@ class Marriage(commands.Cog):
     )
     async def flirt(self, ctx: commands.Context, member: discord.Member):
         if member == ctx.author:
-            return await ctx.send("😳 You can’t flirt with yourself... or can you?")
+            return await ctx.send(
+                embed=make_embed("Flirt", "😳 You can’t flirt with yourself... or can you?")
+            )
+
         if member.bot:
-            return await ctx.send("🤖 Bots don't understand love... yet.")
+            return await ctx.send(
+                embed=make_embed("Flirt", "🤖 Bots don't understand love... yet.")
+            )
 
         lines = [
             "Are you Wi-Fi? Because I’m feeling a strong connection.",
@@ -131,7 +187,12 @@ class Marriage(commands.Cog):
             "I’d share my last health potion with you. 💖",
         ]
 
-        await ctx.send(f"{ctx.author.mention} flirts with {member.mention}:\n> {random.choice(lines)}")
+        await ctx.send(
+            embed=make_embed(
+                "Flirt",
+                f"{ctx.author.mention} flirts with {member.mention}:\n> {random.choice(lines)}"
+            )
+        )
 
 
 async def setup(bot: commands.Bot):
