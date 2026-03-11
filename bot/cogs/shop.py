@@ -16,9 +16,7 @@ from config import SHOP_ITEMS, ITEM_PRICES
 EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 SHOP_RESTOCK_MINUTES = 30
-SHOP_MAX_STOCK = 12
-SHOP_RESTOCK_ADD_MIN = 1
-SHOP_RESTOCK_ADD_MAX = 4
+SHOP_MAX_STOCK = 10
 
 
 def ensure_user(coins: dict, user_id: int | str) -> dict:
@@ -42,12 +40,84 @@ def ensure_inventory(inv: dict, user_id: int | str) -> dict:
     return inv[uid]
 
 
+def weighted_stock_for_price(price: int, min_price: int, max_price: int) -> int:
+    """
+    Cheap items restock more often and in higher amounts.
+    Expensive items restock less often and in smaller amounts.
+
+    Non-cumulative: each restock computes a fresh stock value.
+    """
+    if max_price <= min_price:
+        return random.randint(1, SHOP_MAX_STOCK)
+
+    # affordability score:
+    # cheapest item -> 1.0
+    # most expensive item -> 0.0
+    score = 1.0 - ((price - min_price) / (max_price - min_price))
+    score = max(0.0, min(1.0, score))
+
+    # chance item appears at all
+    # cheap items: very likely
+    # expensive items: less likely
+    appear_chance = 0.15 + (score * 0.85)
+
+    if random.random() > appear_chance:
+        return 0
+
+    # max stock based on affordability
+    # cheap items can go high, expensive items stay low
+    upper = max(1, int(round(1 + score * (SHOP_MAX_STOCK - 1))))
+
+    # bias distribution toward lower numbers for expensive items
+    # and higher numbers for cheaper items
+    if upper <= 2:
+        return random.randint(1, upper)
+
+    roll = random.random()
+
+    if score >= 0.75:
+        # cheap items: usually medium-high stock
+        if roll < 0.15:
+            return random.randint(1, max(1, upper // 3))
+        elif roll < 0.50:
+            return random.randint(max(1, upper // 3), max(1, (2 * upper) // 3))
+        else:
+            return random.randint(max(1, (2 * upper) // 3), upper)
+
+    if score >= 0.40:
+        # mid-priced items: usually medium or low-medium
+        if roll < 0.35:
+            return random.randint(1, max(1, upper // 3))
+        elif roll < 0.80:
+            return random.randint(max(1, upper // 3), max(1, (2 * upper) // 3))
+        else:
+            return random.randint(max(1, (2 * upper) // 3), upper)
+
+    # expensive items: usually low stock
+    if roll < 0.75:
+        return random.randint(1, max(1, upper // 2))
+    return random.randint(max(1, upper // 2), upper)
+
+
+def generate_fresh_shop_stock() -> dict:
+    prices = [int(ITEM_PRICES[item]) for item in SHOP_ITEMS]
+    min_price = min(prices)
+    max_price = max(prices)
+
+    stock = {}
+
+    for item in SHOP_ITEMS:
+        price = int(ITEM_PRICES[item])
+        stock[item] = weighted_stock_for_price(price, min_price, max_price)
+
+    return stock
+
+
 def ensure_shop_stock(stock: dict) -> dict:
     changed = False
 
     for item in SHOP_ITEMS:
         if item not in stock:
-            stock[item] = random.randint(3, 8)
             changed = True
 
     for item in list(stock.keys()):
@@ -56,6 +126,7 @@ def ensure_shop_stock(stock: dict) -> dict:
             changed = True
 
     if changed:
+        stock = generate_fresh_shop_stock()
         save_shop_stock(stock)
 
     return stock
@@ -75,22 +146,8 @@ class Shop(commands.Cog):
 
     @tasks.loop(minutes=SHOP_RESTOCK_MINUTES)
     async def restock_shop(self):
-        stock = load_shop_stock()
-        stock = ensure_shop_stock(stock)
-
-        changed = False
-
-        for item in SHOP_ITEMS:
-            current = int(stock.get(item, 0))
-            add_amount = random.randint(SHOP_RESTOCK_ADD_MIN, SHOP_RESTOCK_ADD_MAX)
-            new_amount = min(SHOP_MAX_STOCK, current + add_amount)
-
-            if new_amount != current:
-                stock[item] = new_amount
-                changed = True
-
-        if changed:
-            save_shop_stock(stock)
+        stock = generate_fresh_shop_stock()
+        save_shop_stock(stock)
 
     @restock_shop.before_loop
     async def before_restock_shop(self):
@@ -135,7 +192,7 @@ class Shop(commands.Cog):
             description=table,
             color=EMBED_COLOR
         )
-        embed.set_footer(text="Restocks every 30 minutes")
+        embed.set_footer(text="Fresh restock every 30 minutes")
 
         await ctx.send(embed=embed)
 
