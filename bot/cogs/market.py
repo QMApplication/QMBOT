@@ -1,4 +1,8 @@
+import io
+
 import discord
+import matplotlib.pyplot as plt
+import numpy as np
 from discord.ext import commands
 
 from storage import load_coins, save_coins, load_stocks
@@ -33,14 +37,14 @@ class Stocks(commands.Cog):
         name="stocks",
         description="View all stock prices."
     )
-    async def stocks(self, ctx):
+    async def stocks(self, ctx: commands.Context):
 
         stocks = load_stocks()
 
         desc = ""
 
         for name in STOCKS:
-            price = stocks[name]["price"]
+            price = stocks.get(name, {}).get("price", 0)
             desc += f"**{name}** — {price} coins\n"
 
         embed = discord.Embed(
@@ -57,35 +61,68 @@ class Stocks(commands.Cog):
 
     @commands.hybrid_command(
         name="stockvalue",
-        description="Check the price of a stock."
+        description="Show a stock's price and chart."
     )
-    async def stockvalue(self, ctx, stock: str):
+    async def stockvalue(self, ctx: commands.Context, stock: str):
 
-        stock = stock.capitalize()
+        stock_names = {s.lower(): s for s in STOCKS}
+        key = stock.lower().strip()
 
-        stocks = load_stocks()
-
-        if stock not in stocks:
+        if key not in stock_names:
             return await ctx.send("Unknown stock.")
 
-        data = stocks[stock]
+        stock_name = stock_names[key]
 
-        price = data["price"]
-        history = data.get("history", [])
+        stocks = load_stocks()
+        data = stocks.get(stock_name)
+
+        if not data:
+            return await ctx.send("Unknown stock.")
+
+        price = int(data.get("price", 0))
+        history = data.get("history", []) or []
 
         change = 0
         if len(history) > 1:
-            change = price - history[-2]
+            change = price - int(history[-2])
+
+        if len(history) < 2:
+            embed = discord.Embed(
+                title=f"{stock_name} Stock",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="Price", value=price)
+            embed.add_field(name="Change", value=change)
+            embed.add_field(name="Chart", value="Not enough history yet.")
+            return await ctx.send(embed=embed)
+
+        x = np.arange(len(history))
+        y = np.array(history, dtype=float)
+
+        plt.figure(figsize=(7, 4))
+        plt.plot(x, y, marker="o")
+        plt.title(f"{stock_name} Price History")
+        plt.xlabel("Update")
+        plt.ylabel("Price")
+        plt.grid(True)
+
+        buf = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format="png")
+        plt.close()
+        buf.seek(0)
+
+        file = discord.File(buf, filename="stock.png")
 
         embed = discord.Embed(
-            title=f"{stock} Stock",
+            title=f"{stock_name} Stock",
             color=discord.Color.blue()
         )
-
         embed.add_field(name="Price", value=price)
-        embed.add_field(name="Change", value=change)
+        embed.add_field(name="Change", value=f"{change:+}")
+        embed.set_image(url="attachment://stock.png")
 
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, file=file)
 
     # -------------------------
     # PORTFOLIO
@@ -95,7 +132,7 @@ class Stocks(commands.Cog):
         name="portfolio",
         description="View your stock portfolio."
     )
-    async def portfolio(self, ctx, member: discord.Member = None):
+    async def portfolio(self, ctx: commands.Context, member: discord.Member = None):
 
         member = member or ctx.author
 
@@ -103,22 +140,18 @@ class Stocks(commands.Cog):
         user = ensure_user(coins, member.id)
 
         pf = user.get("portfolio", {})
-
         stocks = load_stocks()
 
         desc = ""
         total = 0
 
         for s in STOCKS:
-
-            qty = pf.get(s, 0)
+            qty = int(pf.get(s, 0))
 
             if qty > 0:
-
-                value = qty * stocks[s]["price"]
-
+                price = int(stocks.get(s, {}).get("price", 0))
+                value = qty * price
                 total += value
-
                 desc += f"{s}: {qty} shares ({value})\n"
 
         if desc == "":
@@ -126,7 +159,8 @@ class Stocks(commands.Cog):
 
         embed = discord.Embed(
             title=f"{member.display_name}'s Portfolio",
-            description=desc
+            description=desc,
+            color=discord.Color.blue()
         )
 
         embed.add_field(name="Total Value", value=total)
@@ -141,19 +175,21 @@ class Stocks(commands.Cog):
         name="buy",
         description="Buy shares of a stock."
     )
-    async def buy(self, ctx, stock: str, amount: int):
+    async def buy(self, ctx: commands.Context, stock: str, amount: int):
 
-        stock = stock.capitalize()
+        stock_names = {s.lower(): s for s in STOCKS}
+        key = stock.lower().strip()
 
-        if stock not in STOCKS:
+        if key not in stock_names:
             return await ctx.send("Unknown stock.")
 
         if amount <= 0:
             return await ctx.send("Invalid amount.")
 
-        stocks = load_stocks()
-        price = stocks[stock]["price"]
+        stock_name = stock_names[key]
 
+        stocks = load_stocks()
+        price = int(stocks.get(stock_name, {}).get("price", 0))
         cost = price * amount
 
         coins = load_coins()
@@ -165,17 +201,16 @@ class Stocks(commands.Cog):
         user["wallet"] -= cost
 
         pf = user["portfolio"]
-        pf[stock] = pf.get(stock, 0) + amount
+        pf[stock_name] = int(pf.get(stock_name, 0)) + amount
 
         save_coins(coins)
 
-        # notify market engine
         tasks = self.bot.get_cog("BackgroundTasks")
         if tasks:
-            tasks.record_trade(stock, "buy", amount)
+            tasks.record_trade(stock_name, "buy", amount)
 
         await ctx.send(
-            f"📈 Bought **{amount}** {stock} shares for **{cost}** coins."
+            f"📈 Bought **{amount}** {stock_name} shares for **{cost}** coins."
         )
 
     # -------------------------
@@ -186,45 +221,45 @@ class Stocks(commands.Cog):
         name="sell",
         description="Sell shares of a stock."
     )
-    async def sell(self, ctx, stock: str, amount: int):
+    async def sell(self, ctx: commands.Context, stock: str, amount: int):
 
-        stock = stock.capitalize()
+        stock_names = {s.lower(): s for s in STOCKS}
+        key = stock.lower().strip()
 
-        if stock not in STOCKS:
+        if key not in stock_names:
             return await ctx.send("Unknown stock.")
 
         if amount <= 0:
             return await ctx.send("Invalid amount.")
 
+        stock_name = stock_names[key]
+
         coins = load_coins()
         user = ensure_user(coins, ctx.author.id)
 
         pf = user["portfolio"]
-
-        owned = pf.get(stock, 0)
+        owned = int(pf.get(stock_name, 0))
 
         if owned < amount:
             return await ctx.send("Not enough shares.")
 
         stocks = load_stocks()
-        price = stocks[stock]["price"]
-
+        price = int(stocks.get(stock_name, {}).get("price", 0))
         revenue = price * amount
 
-        pf[stock] -= amount
-
+        pf[stock_name] = owned - amount
         user["wallet"] += revenue
 
         save_coins(coins)
 
         tasks = self.bot.get_cog("BackgroundTasks")
         if tasks:
-            tasks.record_trade(stock, "sell", amount)
+            tasks.record_trade(stock_name, "sell", amount)
 
         await ctx.send(
-            f"📉 Sold **{amount}** {stock} shares for **{revenue}** coins."
+            f"📉 Sold **{amount}** {stock_name} shares for **{revenue}** coins."
         )
 
 
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(Stocks(bot))
