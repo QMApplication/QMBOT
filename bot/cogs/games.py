@@ -7,6 +7,8 @@ from storage import load_coins, save_coins
 
 EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
+BLACKJACK_GAMES: dict[str, dict] = {}
+
 
 def ensure_user(coins: dict, user_id: int | str) -> dict:
     uid = str(user_id)
@@ -20,23 +22,231 @@ def ensure_user(coins: dict, user_id: int | str) -> dict:
     return coins[uid]
 
 
-BLACKJACK_GAMES: dict[str, dict] = {}
+def draw_card() -> str:
+    ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+    suits = ["♠", "♥", "♦", "♣"]
+    return f"{random.choice(ranks)}{random.choice(suits)}"
 
 
-def draw_card() -> int:
-    cards = [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 10, 10, 11]
-    return random.choice(cards)
+def card_value(card: str) -> int:
+    rank = card[:-1]
+
+    if rank in {"J", "Q", "K"}:
+        return 10
+    if rank == "A":
+        return 11
+    return int(rank)
 
 
-def hand_value(hand: list[int]) -> int:
-    total = sum(hand)
-    aces = hand.count(11)
+def hand_value(hand: list[str]) -> int:
+    total = sum(card_value(card) for card in hand)
+    aces = sum(1 for card in hand if card[:-1] == "A")
 
     while total > 21 and aces > 0:
         total -= 10
         aces -= 1
 
     return total
+
+
+def format_hand(hand: list[str]) -> str:
+    return f"`{'  '.join(hand)}`"
+
+
+class GambleView(discord.ui.View):
+    def __init__(self, *, author_id: int, coins: dict, user: dict, bet: int):
+        super().__init__(timeout=20)
+        self.author_id = author_id
+        self.coins = coins
+        self.user = user
+        self.bet = bet
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "This gamble isn't for you.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+
+    async def _finish(self, interaction: discord.Interaction, choice: str):
+        result = random.choice(["red", "black"])
+
+        if choice == result:
+            winnings = self.bet * 2
+            self.user["wallet"] += winnings
+
+            embed = discord.Embed(
+                title="Gamble Result",
+                description=(
+                    f"Choice: **{choice.title()}**\n"
+                    f"Result: **{result.title()}**\n\n"
+                    f"You won **{winnings}** coins."
+                ),
+                color=EMBED_COLOR
+            )
+        else:
+            embed = discord.Embed(
+                title="Gamble Result",
+                description=(
+                    f"Choice: **{choice.title()}**\n"
+                    f"Result: **{result.title()}**\n\n"
+                    f"You lost **{self.bet}** coins."
+                ),
+                color=EMBED_COLOR
+            )
+
+        embed.add_field(name="¢ Wallet", value=f"`{self.user['wallet']}`", inline=False)
+
+        save_coins(self.coins)
+
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(embed=embed, view=self)
+        self.stop()
+
+    @discord.ui.button(label="Red", style=discord.ButtonStyle.danger)
+    async def red_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._finish(interaction, "red")
+
+    @discord.ui.button(label="Black", style=discord.ButtonStyle.secondary)
+    async def black_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._finish(interaction, "black")
+
+
+class BlackjackView(discord.ui.View):
+    def __init__(self, *, cog, author_id: int):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.author_id = str(author_id)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if str(interaction.user.id) != self.author_id:
+            await interaction.response.send_message(
+                "This blackjack game isn't for you.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+
+    def build_game_embed(self, game: dict) -> discord.Embed:
+        player_hand = game["player"]
+        dealer_hand = game["dealer"]
+        player_total = hand_value(player_hand)
+
+        embed = discord.Embed(
+            title="Blackjack",
+            description=(
+                f"Your hand: {format_hand(player_hand)}  ({player_total})\n"
+                f"Dealer hand: `{dealer_hand[0]}  ?`\n"
+            ),
+            color=EMBED_COLOR
+        )
+        embed.add_field(name="Bet", value=f"`{game['bet']}`", inline=False)
+        return embed
+
+    async def end_game(self, interaction: discord.Interaction, *, embed: discord.Embed):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(embed=embed, view=self)
+        self.stop()
+
+    @discord.ui.button(label="Hit", style=discord.ButtonStyle.primary)
+    async def hit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        game = BLACKJACK_GAMES.get(self.author_id)
+        if not game:
+            for child in self.children:
+                child.disabled = True
+            return await interaction.response.edit_message(view=self)
+
+        game["player"].append(draw_card())
+        value = hand_value(game["player"])
+
+        if value > 21:
+            coins = load_coins()
+            user = ensure_user(coins, self.author_id)
+
+            embed = discord.Embed(
+                title="Blackjack Result",
+                description=(
+                    f"Your hand: {format_hand(game['player'])}  ({value})\n"
+                    f"Dealer hand: `{game['dealer'][0]}  ?`\n\n"
+                    f"Bust. You lost **{game['bet']}** coins."
+                ),
+                color=EMBED_COLOR
+            )
+            embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
+
+            BLACKJACK_GAMES.pop(self.author_id, None)
+            return await self.end_game(interaction, embed=embed)
+
+        embed = self.build_game_embed(game)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+        reminder = discord.Embed(
+            title="Blackjack",
+            description="Choose **Hit** or **Stand** again.",
+            color=EMBED_COLOR
+        )
+        await interaction.followup.send(embed=reminder, delete_after=5)
+
+    @discord.ui.button(label="Stand", style=discord.ButtonStyle.secondary)
+    async def stand_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        game = BLACKJACK_GAMES.get(self.author_id)
+        if not game:
+            for child in self.children:
+                child.disabled = True
+            return await interaction.response.edit_message(view=self)
+
+        player_hand = list(game["player"])
+        dealer_hand = list(game["dealer"])
+        bet = int(game["bet"])
+
+        player_val = hand_value(player_hand)
+
+        while hand_value(dealer_hand) < 17:
+            dealer_hand.append(draw_card())
+
+        dealer_val = hand_value(dealer_hand)
+
+        coins = load_coins()
+        user = ensure_user(coins, self.author_id)
+
+        if dealer_val > 21 or player_val > dealer_val:
+            winnings = bet * 2
+            user["wallet"] += winnings
+            msg = f"You won **{winnings}** coins."
+        elif player_val == dealer_val:
+            user["wallet"] += bet
+            msg = f"Push. Your **{bet}** coins were returned."
+        else:
+            msg = "Dealer wins."
+
+        save_coins(coins)
+        BLACKJACK_GAMES.pop(self.author_id, None)
+
+        embed = discord.Embed(
+            title="Blackjack Result",
+            description=(
+                f"Your hand: {format_hand(player_hand)}  ({player_val})\n"
+                f"Dealer hand: {format_hand(dealer_hand)}  ({dealer_val})\n\n"
+                f"{msg}"
+            ),
+            color=EMBED_COLOR
+        )
+        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
+
+        await self.end_game(interaction, embed=embed)
 
 
 class Games(commands.Cog):
@@ -67,7 +277,7 @@ class Games(commands.Cog):
 
     @commands.hybrid_command(
         name="gamble",
-        description="Gamble coins for a 50/50 chance."
+        description="Bet on red or black."
     )
     async def gamble(self, ctx: commands.Context, amount: str):
         coins = load_coins()
@@ -89,29 +299,26 @@ class Games(commands.Cog):
             return await ctx.send("Not enough coins.")
 
         user["wallet"] -= bet
-
-        win = random.choice([True, False])
-
-        if win:
-            winnings = bet * 2
-            user["wallet"] += winnings
-
-            embed = discord.Embed(
-                title="Gamble Result",
-                description=f"You won **{winnings}** coins.",
-                color=EMBED_COLOR
-            )
-            embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
-        else:
-            embed = discord.Embed(
-                title="Gamble Result",
-                description=f"You lost **{bet}** coins.",
-                color=EMBED_COLOR
-            )
-            embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
-
         save_coins(coins)
-        await ctx.send(embed=embed)
+
+        embed = discord.Embed(
+            title="Place Your Bet",
+            description=(
+                f"Bet: **{bet}** coins\n\n"
+                f"Choose **Red** or **Black**."
+            ),
+            color=EMBED_COLOR
+        )
+        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
+
+        view = GambleView(
+            author_id=ctx.author.id,
+            coins=coins,
+            user=user,
+            bet=bet
+        )
+
+        await ctx.send(embed=embed, view=view)
 
     # -------------------------
     # BLACKJACK START
@@ -170,140 +377,37 @@ class Games(commands.Cog):
                 winnings = amount * 2
                 user["wallet"] += winnings
                 result_msg = f"Natural blackjack. You won **{winnings}** coins."
-                color = EMBED_COLOR
             else:
                 user["wallet"] += amount
                 result_msg = f"Push. Both hands hit blackjack. Your **{amount}** coins were returned."
-                color = EMBED_COLOR
 
             save_coins(coins)
-            del BLACKJACK_GAMES[uid]
+            BLACKJACK_GAMES.pop(uid, None)
 
             embed = discord.Embed(
                 title="Blackjack Result",
                 description=(
-                    f"Your hand: `{player}`  ({player_total})\n"
-                    f"Dealer hand: `{dealer}`  ({dealer_total})\n\n"
+                    f"Your hand: {format_hand(player)}  ({player_total})\n"
+                    f"Dealer hand: {format_hand(dealer)}  ({dealer_total})\n\n"
                     f"{result_msg}"
                 ),
-                color=color
+                color=EMBED_COLOR
             )
-            embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
+            embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
             return await ctx.send(embed=embed)
 
         embed = discord.Embed(
             title="Blackjack",
             description=(
-                f"Your hand: `{player}`  ({player_total})\n"
-                f"Dealer hand: `[{dealer[0]}, ?]`\n\n"
-                "Use `hit` or `stand`."
+                f"Your hand: {format_hand(player)}  ({player_total})\n"
+                f"Dealer hand: `{dealer[0]}  ?`\n"
             ),
             color=EMBED_COLOR
         )
         embed.add_field(name="Bet", value=f"`{amount}`", inline=False)
 
-        await ctx.send(embed=embed)
-
-    # -------------------------
-    # HIT
-    # -------------------------
-
-    @commands.hybrid_command(
-        name="hit",
-        description="Draw another card in blackjack."
-    )
-    async def hit(self, ctx: commands.Context):
-        uid = str(ctx.author.id)
-
-        if uid not in BLACKJACK_GAMES:
-            return await ctx.send("No blackjack game running.")
-
-        game = BLACKJACK_GAMES[uid]
-        game["player"].append(draw_card())
-
-        value = hand_value(game["player"])
-
-        if value > 21:
-            busted_hand = list(game["player"])
-            bet = int(game["bet"])
-            del BLACKJACK_GAMES[uid]
-
-            embed = discord.Embed(
-                title="Blackjack Result",
-                description=(
-                    f"Your hand: `{busted_hand}`  ({value})\n\n"
-                    f"Bust. You lost **{bet}** coins."
-                ),
-                color=EMBED_COLOR
-            )
-            return await ctx.send(embed=embed)
-
-        embed = discord.Embed(
-            title="Blackjack",
-            description=(
-                f"Your hand: `{game['player']}`  ({value})\n\n"
-                "Use `hit` or `stand`."
-            ),
-            color=EMBED_COLOR
-        )
-
-        await ctx.send(embed=embed)
-
-    # -------------------------
-    # STAND
-    # -------------------------
-
-    @commands.hybrid_command(
-        name="stand",
-        description="Stand in blackjack and let the dealer play."
-    )
-    async def stand(self, ctx: commands.Context):
-        uid = str(ctx.author.id)
-
-        if uid not in BLACKJACK_GAMES:
-            return await ctx.send("No blackjack game running.")
-
-        game = BLACKJACK_GAMES[uid]
-
-        player_hand = list(game["player"])
-        dealer_hand = list(game["dealer"])
-        bet = int(game["bet"])
-
-        player_val = hand_value(player_hand)
-
-        while hand_value(dealer_hand) < 17:
-            dealer_hand.append(draw_card())
-
-        dealer_val = hand_value(dealer_hand)
-
-        coins = load_coins()
-        user = ensure_user(coins, uid)
-
-        if dealer_val > 21 or player_val > dealer_val:
-            winnings = bet * 2
-            user["wallet"] += winnings
-            msg = f"You won **{winnings}** coins."
-        elif player_val == dealer_val:
-            user["wallet"] += bet
-            msg = f"Push. Your **{bet}** coins were returned."
-        else:
-            msg = "Dealer wins."
-
-        save_coins(coins)
-        del BLACKJACK_GAMES[uid]
-
-        embed = discord.Embed(
-            title="Blackjack Result",
-            description=(
-                f"Your hand: `{player_hand}`  ({player_val})\n"
-                f"Dealer hand: `{dealer_hand}`  ({dealer_val})\n\n"
-                f"{msg}"
-            ),
-            color=EMBED_COLOR
-        )
-        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
-
-        await ctx.send(embed=embed)
+        view = BlackjackView(cog=self, author_id=ctx.author.id)
+        await ctx.send(embed=embed, view=view)
 
 
 async def setup(bot: commands.Bot):
