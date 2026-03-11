@@ -30,6 +30,14 @@ MAX_STOCK = {
 }
 
 
+def make_embed(title: str, description: str) -> discord.Embed:
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=EMBED_COLOR
+    )
+
+
 # -------------------------
 # USER / INVENTORY
 # -------------------------
@@ -73,33 +81,26 @@ def generate_shop_stock() -> dict:
     stock = {}
 
     for item in SHOP_ITEMS:
-
         price = ITEM_PRICES[item]
 
-        # affordability score
         score = 1 - ((price - min_price) / (max_price - min_price))
-
         score = max(0, min(1, score))
 
         max_item_stock = MAX_STOCK.get(item, 5)
 
-        # chance item appears at all
         appear_chance = 0.15 + (score * 0.85)
 
         if random.random() > appear_chance:
             stock[item] = 0
             continue
 
-        # cheaper items get higher possible stock
         upper = max(1, int(round(1 + score * (max_item_stock - 1))))
-
         stock[item] = random.randint(1, upper)
 
     return stock
 
 
 def ensure_shop_stock(stock: dict) -> dict:
-
     changed = False
 
     for item in SHOP_ITEMS:
@@ -137,9 +138,7 @@ class Shop(commands.Cog):
 
     @tasks.loop(minutes=SHOP_RESTOCK_MINUTES)
     async def restock(self):
-
         new_stock = generate_shop_stock()
-
         save_shop_stock(new_stock)
 
     @restock.before_loop
@@ -155,17 +154,14 @@ class Shop(commands.Cog):
         description="View the shop."
     )
     async def shop(self, ctx: commands.Context):
-
         stock = load_shop_stock()
         stock = ensure_shop_stock(stock)
 
-        # order items by price (lowest → highest)
         ordered_items = sorted(SHOP_ITEMS, key=lambda x: ITEM_PRICES[x])
 
         rows = []
 
         for item in ordered_items:
-
             price = ITEM_PRICES[item]
             qty = stock.get(item, 0)
 
@@ -174,7 +170,6 @@ class Shop(commands.Cog):
                 f"{str(qty).rjust(5)} | "
                 f"{str(price).rjust(8)}"
             )
-
             rows.append(row)
 
         table = (
@@ -190,7 +185,6 @@ class Shop(commands.Cog):
             description=table,
             color=EMBED_COLOR
         )
-
         embed.set_footer(text="Restocks every 30 minutes")
 
         await ctx.send(embed=embed)
@@ -204,11 +198,12 @@ class Shop(commands.Cog):
         description="Buy an item from the shop."
     )
     async def buyitem(self, ctx: commands.Context, *, item: str):
-
         item = item.strip()
 
         if item not in SHOP_ITEMS:
-            return await ctx.send("Item not found.")
+            return await ctx.send(
+                embed=make_embed("Shop", "Item not found.")
+            )
 
         price = ITEM_PRICES[item]
 
@@ -216,7 +211,9 @@ class Shop(commands.Cog):
         user = ensure_user(coins, ctx.author.id)
 
         if user["wallet"] < price:
-            return await ctx.send("Not enough coins.")
+            return await ctx.send(
+                embed=make_embed("Shop", "Not enough coins.")
+            )
 
         stock = load_shop_stock()
         stock = ensure_shop_stock(stock)
@@ -224,15 +221,15 @@ class Shop(commands.Cog):
         current_stock = stock.get(item, 0)
 
         if current_stock <= 0:
-            return await ctx.send("That item is out of stock.")
+            return await ctx.send(
+                embed=make_embed("Shop", "That item is out of stock.")
+            )
 
         inv = load_inventory()
         user_inv = ensure_inventory(inv, ctx.author.id)
 
         user["wallet"] -= price
-
         user_inv[item] = user_inv.get(item, 0) + 1
-
         stock[item] = current_stock - 1
 
         save_coins(coins)
@@ -244,7 +241,6 @@ class Shop(commands.Cog):
             description=f"Bought **{item}**",
             color=EMBED_COLOR
         )
-
         embed.add_field(name="Cost", value=f"`{price}`")
         embed.add_field(name="Stock Left", value=f"`{stock[item]}`")
         embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`")
@@ -260,21 +256,20 @@ class Shop(commands.Cog):
         description="View your inventory."
     )
     async def inventory(self, ctx: commands.Context, member: discord.Member = None):
-
         member = member or ctx.author
 
         inv = load_inventory()
         user_inv = ensure_inventory(inv, member.id)
 
         if not user_inv:
-            return await ctx.send("Inventory empty.")
+            return await ctx.send(
+                embed=make_embed("Inventory", "Inventory empty.")
+            )
 
         rows = []
 
         for item, qty in user_inv.items():
-
             row = f"{item[:24].ljust(24)} | {str(qty).rjust(5)}"
-
             rows.append(row)
 
         table = (
@@ -290,7 +285,6 @@ class Shop(commands.Cog):
             description=table,
             color=EMBED_COLOR
         )
-
         embed.set_footer(text="Stored items")
 
         await ctx.send(embed=embed)
