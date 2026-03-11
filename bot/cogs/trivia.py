@@ -17,6 +17,14 @@ from cogs.listeners import update_xp
 EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 
+def make_embed(title: str, description: str) -> discord.Embed:
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=EMBED_COLOR
+    )
+
+
 def ensure_user_coins(user_id):
     user_id = str(user_id)
     coins = load_coins()
@@ -72,12 +80,10 @@ class TriviaView(discord.ui.View):
             self.add_item(button)
 
     def make_callback(self, option):
-
         async def callback(interaction: discord.Interaction):
-
             if interaction.user.id != self.author_id:
                 return await interaction.response.send_message(
-                    "This question isn't for you.",
+                    embed=make_embed("Trivia", "This question isn't for you."),
                     ephemeral=True
                 )
 
@@ -117,14 +123,21 @@ class Trivia(commands.Cog):
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as resp:
-
                     if resp.status != 200:
-                        return await ctx.send("Trivia API unavailable.")
-
+                        return await ctx.send(
+                            embed=make_embed("Trivia", "Trivia API unavailable.")
+                        )
                     data = await resp.json()
 
         except Exception:
-            return await ctx.send("Trivia API unavailable.")
+            return await ctx.send(
+                embed=make_embed("Trivia", "Trivia API unavailable.")
+            )
+
+        if not data:
+            return await ctx.send(
+                embed=make_embed("Trivia", "No trivia question was returned.")
+            )
 
         q = data[0]
 
@@ -134,10 +147,14 @@ class Trivia(commands.Cog):
 
         random.shuffle(options)
 
-        category = str(q.get("category", "General")).title()
+        raw_category = q.get("category", "General")
+        if isinstance(raw_category, list):
+            category = str(raw_category[0] if raw_category else "General").title()
+        else:
+            category = str(raw_category).title()
 
         option_text = "\n".join(
-            f"**{i+1}.** {opt}" for i, opt in enumerate(options)
+            f"**{i + 1}.** {opt}" for i, opt in enumerate(options)
         )
 
         embed = discord.Embed(
@@ -145,7 +162,6 @@ class Trivia(commands.Cog):
             description=f"**{question}**\n\n{option_text}",
             color=EMBED_COLOR
         )
-
         embed.set_footer(text=f"Category: {category}")
 
         view = TriviaView(
@@ -160,33 +176,31 @@ class Trivia(commands.Cog):
 
         if view.timed_out:
             await msg.edit(view=view)
-            return await ctx.send(f"Time expired. Correct answer: **{correct}**")
+            return await ctx.send(
+                embed=make_embed("Trivia", f"Time expired.\n\nCorrect answer: **{correct}**")
+            )
 
         chosen = view.chosen_answer
-
         uid = str(ctx.author.id)
 
         streaks = load_trivia_streaks()
         streak = int(streaks.get(uid, 0))
 
         if chosen == correct:
-
             streak += 1
 
             reward_base = 50
             streak_bonus = 5 * min(streak - 1, 10)
-
             reward = reward_base + streak_bonus
 
             coins = ensure_user_coins(ctx.author.id)
             coins[uid]["wallet"] += reward
-
             save_coins(coins)
 
             try:
                 if ctx.guild:
                     await update_xp(self.bot, ctx.author.id, ctx.guild.id, 20)
-            except:
+            except Exception:
                 pass
 
             add_trivia_result(uid, category, True)
@@ -203,7 +217,6 @@ class Trivia(commands.Cog):
             await ctx.send(embed=embed)
 
         else:
-
             add_trivia_result(uid, category, False)
 
             streaks[uid] = 0
@@ -230,21 +243,20 @@ class Trivia(commands.Cog):
         member = member or ctx.author
 
         stats = load_trivia_stats()
-
         uid = str(member.id)
 
         if uid not in stats:
-            return await ctx.send("No trivia stats yet.")
+            return await ctx.send(
+                embed=make_embed("Trivia Stats", "No trivia stats yet.")
+            )
 
         user_stats = stats[uid]
 
         lines = []
-
         total_attempts = 0
         total_correct = 0
 
         for cat, rec in user_stats.items():
-
             attempts = rec["attempts"]
             correct = rec["correct"]
 
@@ -279,12 +291,15 @@ class Trivia(commands.Cog):
     )
     async def trivialeaderboard(self, ctx):
 
-        stats = load_trivia_stats()
+        if not ctx.guild:
+            return await ctx.send(
+                embed=make_embed("Trivia Leaderboard", "This command only works in servers.")
+            )
 
+        stats = load_trivia_stats()
         leaderboard = []
 
         for member in ctx.guild.members:
-
             if member.bot:
                 continue
 
@@ -305,7 +320,6 @@ class Trivia(commands.Cog):
         lines = []
 
         for i, (member, correct, attempts) in enumerate(leaderboard[:10], 1):
-
             acc = (correct / attempts * 100) if attempts else 0
 
             lines.append(
