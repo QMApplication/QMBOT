@@ -22,6 +22,11 @@ from storage import (
 )
 
 # =========================
+# Style
+# =========================
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+
+# =========================
 # AFK
 # =========================
 AFK_STATUS = {}  # key = f"{guild_id}-{user_id}" -> reason
@@ -46,6 +51,13 @@ _LAST_SWEAR_COUNT_AT = {}  # user_id -> unix timestamp
 # =========================
 # Helpers
 # =========================
+def make_embed(title: str | None = None, description: str = "", color=EMBED_COLOR):
+    embed = discord.Embed(description=description, color=color)
+    if title:
+        embed.title = title
+    return embed
+
+
 def ensure_user_coins(user_id):
     user_id = str(user_id)
     coins = load_coins()
@@ -182,7 +194,10 @@ async def update_xp(bot: commands.Bot, user_id: int, guild_id: int, xp_amount: i
             try:
                 user_obj = await bot.fetch_user(user_id)
                 await channel.send(
-                    f"🎉 **{user_obj.mention}** just reached level **{new_level}**! 🚀"
+                    embed=make_embed(
+                        "Level Up",
+                        f"🎉 {user_obj.mention} just reached level **{new_level}**! 🚀"
+                    )
                 )
             except Exception:
                 pass
@@ -222,12 +237,12 @@ class Listeners(commands.Cog):
             return
 
         embed = discord.Embed(
-            title=f"Welcome to {member.guild.name} 🎓",
+            title=f"Welcome to {member.guild.name}",
             description=(
-                f"{member.mention}, we're glad to have you here!\n\n"
-                "Make sure to check out the channels and have fun!"
+                f"{member.mention}, we're glad to have you here.\n\n"
+                "Make sure to check out the channels and have fun."
             ),
-            color=discord.Color.green()
+            color=EMBED_COLOR
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(embed=embed)
@@ -270,8 +285,11 @@ class Listeners(commands.Cog):
                         total = int(jar.get("total", 0))
 
                         await message.channel.send(
-                            f"🫙 {message.author.mention} added **{swear_count}** coin(s) to the swear jar! "
-                            f"Server total: **{total}**",
+                            embed=make_embed(
+                                "Swear Jar",
+                                f"{message.author.mention} added **{swear_count}** coin(s) to the swear jar.\n"
+                                f"Server total: **{total}**"
+                            ),
                             delete_after=5
                         )
 
@@ -288,7 +306,10 @@ class Listeners(commands.Cog):
                 pass
 
             await message.channel.send(
-                f"{message.author.mention} its fair 🔪 ",
+                embed=make_embed(
+                    "Filtered",
+                    f"{message.author.mention} its fair 🔪"
+                ),
                 delete_after=5
             )
             return
@@ -302,20 +323,24 @@ class Listeners(commands.Cog):
             # Remove AFK if user speaks
             if key in AFK_STATUS:
                 del AFK_STATUS[key]
-                await message.channel.send(embed=discord.Embed(
-                    description=f"{message.author.mention} is no longer AFK.",
-                    color=discord.Color.red()
-                ))
+                await message.channel.send(
+                    embed=make_embed(
+                        "AFK Removed",
+                        f"{message.author.mention} is no longer AFK."
+                    )
+                )
 
             # Notify if mentioning AFK users
             for user in message.mentions:
                 mention_key = f"{message.guild.id}-{user.id}"
                 if mention_key in AFK_STATUS:
                     reason = AFK_STATUS[mention_key]
-                    await message.channel.send(embed=discord.Embed(
-                        description=f"{user.display_name} is currently AFK: {reason}",
-                        color=discord.Color.purple()
-                    ))
+                    await message.channel.send(
+                        embed=make_embed(
+                            "AFK Notice",
+                            f"{user.display_name} is currently AFK: {reason}"
+                        )
+                    )
 
             # XP update
             try:
@@ -337,15 +362,19 @@ class Listeners(commands.Cog):
     )
     async def afk(self, ctx: commands.Context, *, reason: str = "AFK"):
         if not ctx.guild:
-            return await ctx.send("AFK only works in servers.")
+            return await ctx.send(
+                embed=make_embed("AFK", "AFK only works in servers.")
+            )
 
         key = f"{ctx.guild.id}-{ctx.author.id}"
         AFK_STATUS[key] = reason
 
-        await ctx.send(embed=discord.Embed(
-            description=f"{ctx.author.mention} is now AFK: {reason}",
-            color=discord.Color.green()
-        ))
+        await ctx.send(
+            embed=make_embed(
+                "AFK Set",
+                f"{ctx.author.mention} is now AFK: {reason}"
+            )
+        )
 
 
 async def setup(bot: commands.Bot):
