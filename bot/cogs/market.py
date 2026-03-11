@@ -9,6 +9,9 @@ from storage import load_coins, save_coins, load_stocks
 from config import STOCKS
 
 
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+
+
 def ensure_user(coins, user_id):
     uid = str(user_id)
 
@@ -41,17 +44,17 @@ class Stocks(commands.Cog):
 
         stocks = load_stocks()
 
-        desc = ""
-
+        lines = []
         for name in STOCKS:
-            price = stocks.get(name, {}).get("price", 0)
-            desc += f"**{name}** — {price} coins\n"
+            price = int(stocks.get(name, {}).get("price", 0))
+            lines.append(f"• **{name}**  `{price}`")
 
         embed = discord.Embed(
-            title="📈 Stock Market",
-            description=desc,
-            color=discord.Color.green()
+            title="Market",
+            description="\n".join(lines),
+            color=EMBED_COLOR
         )
+        embed.set_footer(text="Live prices")
 
         await ctx.send(embed=embed)
 
@@ -88,64 +91,58 @@ class Stocks(commands.Cog):
 
         if len(history) < 2:
             embed = discord.Embed(
-                title=f"{stock_name} Stock",
-                color=discord.Color.blue()
+                title=stock_name,
+                color=EMBED_COLOR
             )
-            embed.add_field(name="Price", value=price)
-            embed.add_field(name="Change", value=f"{change:+}")
-            embed.add_field(name="Chart", value="Not enough history yet.")
-            return await ctx.send(embed=embed)
+            embed.add_field(name="Price", value=f"`{price}`", inline=True)
+            embed.add_field(name="Change", value=f"`{change:+}`", inline=True)
+            embed.add_field(name="Chart", value="Not enough history yet.", inline=False)
+            await ctx.send(embed=embed)
+            return
 
         x = np.arange(len(history))
         y = np.array(history, dtype=float)
 
-        # --- dark chart styling ---
-        fig, ax = plt.subplots(figsize=(9, 5), dpi=140)
-        fig.patch.set_facecolor("#0f1117")
-        ax.set_facecolor("#0f1117")
+        fig, ax = plt.subplots(figsize=(9, 4.8), dpi=150)
+        fig.patch.set_facecolor("#0d1117")
+        ax.set_facecolor("#0d1117")
 
-        # blue line kept as requested
         ax.plot(
             x,
             y,
-            color="blue",
-            linewidth=2.2,
+            color="#4a90e2",
+            linewidth=2.0,
             solid_capstyle="round"
         )
 
-        # subtle fill under line
-        ax.fill_between(x, y, y.min(), color="blue", alpha=0.10)
+        ax.fill_between(x, y, y.min(), color="#4a90e2", alpha=0.08)
 
-        # thin grid lines
         ax.grid(
             True,
             which="major",
             linestyle="-",
-            linewidth=0.45,
-            alpha=0.18,
-            color="white"
+            linewidth=0.35,
+            alpha=0.12,
+            color="#ffffff"
         )
 
-        # spines
         for spine in ax.spines.values():
-            spine.set_color("#7f8ea3")
+            spine.set_color("#3a4250")
             spine.set_linewidth(0.8)
 
-        # labels/ticks
-        ax.tick_params(axis="x", colors="#d6deeb", labelsize=9)
-        ax.tick_params(axis="y", colors="#d6deeb", labelsize=9)
-        ax.set_title(f"{stock_name} Price History", color="white", fontsize=15, pad=12)
-        ax.set_xlabel("Market Updates", color="#d6deeb", fontsize=10, labelpad=8)
-        ax.set_ylabel("Price", color="#d6deeb", fontsize=10, labelpad=8)
+        ax.tick_params(axis="x", colors="#aeb6c2", labelsize=8)
+        ax.tick_params(axis="y", colors="#aeb6c2", labelsize=8)
 
-        # padding so line isn't glued to borders
+        ax.set_title(f"{stock_name}  |  Price History", color="#e6edf3", fontsize=13, pad=10)
+        ax.set_xlabel("Updates", color="#aeb6c2", fontsize=9, labelpad=8)
+        ax.set_ylabel("Price", color="#aeb6c2", fontsize=9, labelpad=8)
+
         ymin = float(y.min())
         ymax = float(y.max())
-        pad = max(2.0, (ymax - ymin) * 0.12 if ymax > ymin else ymax * 0.08 + 2)
+        pad = max(2.0, (ymax - ymin) * 0.10 if ymax > ymin else ymax * 0.06 + 2)
         ax.set_ylim(max(0, ymin - pad), ymax + pad)
 
-        # mark latest point
-        ax.scatter([x[-1]], [y[-1]], color="blue", s=28, zorder=3)
+        ax.scatter([x[-1]], [y[-1]], color="#4a90e2", s=18, zorder=3)
 
         plt.tight_layout()
 
@@ -161,14 +158,17 @@ class Stocks(commands.Cog):
 
         file = discord.File(buf, filename="stock.png")
 
+        sign = "+" if change > 0 else ""
         embed = discord.Embed(
-            title=f"{stock_name} Stock",
-            color=discord.Color.blue()
+            title=stock_name,
+            description="Minimal market view",
+            color=EMBED_COLOR
         )
-        embed.add_field(name="Price", value=price)
-        embed.add_field(name="Change", value=f"{change:+}")
-        embed.add_field(name="Points", value=str(len(history)))
+        embed.add_field(name="Price", value=f"`{price}`", inline=True)
+        embed.add_field(name="Change", value=f"`{sign}{change}`", inline=True)
+        embed.add_field(name="History", value=f"`{len(history)} points`", inline=True)
         embed.set_image(url="attachment://stock.png")
+        embed.set_footer(text="Stored market history")
 
         await ctx.send(embed=embed, file=file)
 
@@ -190,28 +190,26 @@ class Stocks(commands.Cog):
         pf = user.get("portfolio", {})
         stocks = load_stocks()
 
-        desc = ""
+        lines = []
         total = 0
 
         for s in STOCKS:
             qty = int(pf.get(s, 0))
-
             if qty > 0:
                 price = int(stocks.get(s, {}).get("price", 0))
                 value = qty * price
                 total += value
-                desc += f"{s}: {qty} shares ({value})\n"
+                lines.append(f"• **{s}**  {qty} shares  |  `{value}`")
 
-        if desc == "":
-            desc = "No stocks."
+        if not lines:
+            lines = ["No stocks."]
 
         embed = discord.Embed(
-            title=f"{member.display_name}'s Portfolio",
-            description=desc,
-            color=discord.Color.blue()
+            title=f"{member.display_name} — Portfolio",
+            description="\n".join(lines),
+            color=EMBED_COLOR
         )
-
-        embed.add_field(name="Total Value", value=total)
+        embed.add_field(name="Total Value", value=f"`{total}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -257,9 +255,15 @@ class Stocks(commands.Cog):
         if tasks:
             tasks.record_trade(stock_name, "buy", amount)
 
-        await ctx.send(
-            f"📈 Bought **{amount}** {stock_name} shares for **{cost}** coins."
+        embed = discord.Embed(
+            title="Order Filled",
+            description=f"Bought **{amount}** shares of **{stock_name}**.",
+            color=EMBED_COLOR
         )
+        embed.add_field(name="Cost", value=f"`{cost}`", inline=True)
+        embed.add_field(name="Price", value=f"`{price}` each", inline=True)
+
+        await ctx.send(embed=embed)
 
     # -------------------------
     # SELL STOCK
@@ -304,9 +308,15 @@ class Stocks(commands.Cog):
         if tasks:
             tasks.record_trade(stock_name, "sell", amount)
 
-        await ctx.send(
-            f"📉 Sold **{amount}** {stock_name} shares for **{revenue}** coins."
+        embed = discord.Embed(
+            title="Order Filled",
+            description=f"Sold **{amount}** shares of **{stock_name}**.",
+            color=EMBED_COLOR
         )
+        embed.add_field(name="Revenue", value=f"`{revenue}`", inline=True)
+        embed.add_field(name="Price", value=f"`{price}` each", inline=True)
+
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
