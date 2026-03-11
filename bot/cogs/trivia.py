@@ -1,6 +1,4 @@
-import asyncio
 import random
-
 import aiohttp
 import discord
 from discord.ext import commands
@@ -79,13 +77,68 @@ def add_trivia_result(uid: str, category: str, correct: bool):
     save_trivia_stats(stats)
 
 
+class TriviaView(discord.ui.View):
+    def __init__(
+        self,
+        *,
+        author_id: int,
+        options: list[str],
+        correct_answer: str,
+        timeout: float = 20.0
+    ):
+        super().__init__(timeout=timeout)
+        self.author_id = int(author_id)
+        self.options = options
+        self.correct_answer = correct_answer
+        self.chosen_answer: str | None = None
+        self.timed_out = False
+
+        for i, option in enumerate(options):
+            button = discord.ui.Button(
+                label=str(i + 1),
+                style=discord.ButtonStyle.primary,
+                custom_id=f"trivia_option_{i}"
+            )
+            button.callback = self._make_callback(option)
+            self.add_item(button)
+
+    def _disable_all(self):
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
+
+    def _make_callback(self, option: str):
+        async def callback(interaction: discord.Interaction):
+            if interaction.user.id != self.author_id:
+                return await interaction.response.send_message(
+                    "❌ This trivia question isn't for you.",
+                    ephemeral=True
+                )
+
+            self.chosen_answer = option
+            self._disable_all()
+
+            try:
+                await interaction.response.edit_message(view=self)
+            except Exception:
+                pass
+
+            self.stop()
+
+        return callback
+
+    async def on_timeout(self):
+        self.timed_out = True
+        self._disable_all()
+
+
 class Trivia(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @commands.hybrid_command(
         name="trivia",
-        description="Answer a trivia question with emoji reactions."
+        description="Answer a trivia question using buttons."
     )
     async def trivia(self, ctx: commands.Context):
         url = "https://the-trivia-api.com/v2/questions"
@@ -113,42 +166,39 @@ class Trivia(commands.Cog):
         category = (raw_cat[0] if isinstance(raw_cat, list) and raw_cat else raw_cat)
         category = str(category).title()
 
-        emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"]
-        option_lines = "\n".join(f"{emojis[i]} {opt}" for i, opt in enumerate(options))
+        option_lines = "\n".join(
+            f"**{i + 1}.** {opt}" for i, opt in enumerate(options)
+        )
 
         embed = discord.Embed(
             title="🧠 Trivia Time!",
-            description=f"**{question}**\n\n{option_lines}\n\nReact with the correct answer!",
+            description=(
+                f"**{question}**\n\n"
+                f"{option_lines}\n\n"
+                "Click a button below to answer."
+            ),
             color=discord.Color.blue()
         )
 
-        msg = await ctx.send(embed=embed)
+        view = TriviaView(
+            author_id=ctx.author.id,
+            options=options,
+            correct_answer=correct,
+            timeout=20.0
+        )
 
-        for emoji in emojis:
+        msg = await ctx.send(embed=embed, view=view)
+        await view.wait()
+
+        if view.timed_out or view.chosen_answer is None:
+            view._disable_all()
             try:
-                await msg.add_reaction(emoji)
-            except discord.HTTPException:
+                await msg.edit(view=view)
+            except Exception:
                 pass
-
-        def check(payload: discord.RawReactionActionEvent):
-            return (
-                payload.user_id == ctx.author.id
-                and payload.message_id == msg.id
-                and str(payload.emoji) in emojis
-            )
-
-        try:
-            payload = await self.bot.wait_for(
-                "raw_reaction_add",
-                timeout=20.0,
-                check=check
-            )
-        except asyncio.TimeoutError:
             return await ctx.send(f"⏰ Out of time! The correct answer was **{correct}**.")
 
-        choice_index = emojis.index(str(payload.emoji))
-        chosen = options[choice_index]
-
+        chosen = view.chosen_answer
         uid = str(ctx.author.id)
         streaks = load_trivia_streaks()
         streak = int(streaks.get(uid, 0))
