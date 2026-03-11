@@ -182,7 +182,7 @@ def _ensure_stock_db() -> dict:
             "liquidity": max(1, liquidity),
             "history": [
                 max(PRICE_FLOOR, int(x))
-                for x in history[-48:]
+                for x in history[-240:]
                 if isinstance(x, (int, float))
             ] or [price],
         }
