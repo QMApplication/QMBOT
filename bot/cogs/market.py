@@ -1,40 +1,23 @@
 import discord
 from discord.ext import commands
-import time
 
 from storage import load_coins, save_coins, load_stocks
 from config import STOCKS
 
 
-TRADE_SETTLEMENT_TIME = 120  # seconds
-
-
-def ensure_user(user_id):
-    coins = load_coins()
+def ensure_user(coins, user_id):
     uid = str(user_id)
 
     if uid not in coins:
         coins[uid] = {
             "wallet": 100,
             "bank": 0,
-            "portfolio": {},
-            "pending_portfolio": [],
-            "trade_meta": {
-                "last_trade_ts": {},
-                "daily": {"day": "", "count": 0}
-            }
+            "portfolio": {}
         }
-        save_coins(coins)
 
-    else:
-        coins[uid].setdefault("portfolio", {})
-        coins[uid].setdefault("pending_portfolio", [])
-        coins[uid].setdefault("trade_meta", {
-            "last_trade_ts": {},
-            "daily": {"day": "", "count": 0}
-        })
+    coins[uid].setdefault("portfolio", {})
 
-    return coins
+    return coins[uid]
 
 
 class Stocks(commands.Cog):
@@ -46,7 +29,10 @@ class Stocks(commands.Cog):
     # STOCK LIST
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="stocks",
+        description="View all stock prices."
+    )
     async def stocks(self, ctx):
 
         stocks = load_stocks()
@@ -54,9 +40,7 @@ class Stocks(commands.Cog):
         desc = ""
 
         for name in STOCKS:
-
             price = stocks[name]["price"]
-
             desc += f"**{name}** — {price} coins\n"
 
         embed = discord.Embed(
@@ -71,7 +55,10 @@ class Stocks(commands.Cog):
     # STOCK VALUE
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="stockvalue",
+        description="Check the price of a stock."
+    )
     async def stockvalue(self, ctx, stock: str):
 
         stock = stock.capitalize()
@@ -96,7 +83,6 @@ class Stocks(commands.Cog):
         )
 
         embed.add_field(name="Price", value=price)
-
         embed.add_field(name="Change", value=change)
 
         await ctx.send(embed=embed)
@@ -105,21 +91,22 @@ class Stocks(commands.Cog):
     # PORTFOLIO
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="portfolio",
+        description="View your stock portfolio."
+    )
     async def portfolio(self, ctx, member: discord.Member = None):
 
         member = member or ctx.author
 
-        coins = ensure_user(member.id)
-
-        user = coins[str(member.id)]
+        coins = load_coins()
+        user = ensure_user(coins, member.id)
 
         pf = user.get("portfolio", {})
 
         stocks = load_stocks()
 
         desc = ""
-
         total = 0
 
         for s in STOCKS:
@@ -150,7 +137,10 @@ class Stocks(commands.Cog):
     # BUY STOCK
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="buy",
+        description="Buy shares of a stock."
+    )
     async def buy(self, ctx, stock: str, amount: int):
 
         stock = stock.capitalize()
@@ -158,29 +148,24 @@ class Stocks(commands.Cog):
         if stock not in STOCKS:
             return await ctx.send("Unknown stock.")
 
-        stocks = load_stocks()
+        if amount <= 0:
+            return await ctx.send("Invalid amount.")
 
+        stocks = load_stocks()
         price = stocks[stock]["price"]
 
         cost = price * amount
 
-        coins = ensure_user(ctx.author.id)
-
-        user = coins[str(ctx.author.id)]
-
-        if amount <= 0:
-            return await ctx.send("Invalid amount.")
+        coins = load_coins()
+        user = ensure_user(coins, ctx.author.id)
 
         if user["wallet"] < cost:
             return await ctx.send("Not enough coins.")
 
         user["wallet"] -= cost
 
-        user["pending_portfolio"].append({
-            "stock": stock,
-            "shares": amount,
-            "settles_at": time.time() + TRADE_SETTLEMENT_TIME
-        })
+        pf = user["portfolio"]
+        pf[stock] = pf.get(stock, 0) + amount
 
         save_coins(coins)
 
@@ -190,15 +175,17 @@ class Stocks(commands.Cog):
             tasks.record_trade(stock, "buy", amount)
 
         await ctx.send(
-            f"📈 Bought **{amount}** {stock} shares.\n"
-            f"Settlement in {TRADE_SETTLEMENT_TIME}s."
+            f"📈 Bought **{amount}** {stock} shares for **{cost}** coins."
         )
 
     # -------------------------
     # SELL STOCK
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="sell",
+        description="Sell shares of a stock."
+    )
     async def sell(self, ctx, stock: str, amount: int):
 
         stock = stock.capitalize()
@@ -206,19 +193,20 @@ class Stocks(commands.Cog):
         if stock not in STOCKS:
             return await ctx.send("Unknown stock.")
 
-        coins = ensure_user(ctx.author.id)
+        if amount <= 0:
+            return await ctx.send("Invalid amount.")
 
-        user = coins[str(ctx.author.id)]
+        coins = load_coins()
+        user = ensure_user(coins, ctx.author.id)
 
         pf = user["portfolio"]
 
         owned = pf.get(stock, 0)
 
-        if amount <= 0 or owned < amount:
+        if owned < amount:
             return await ctx.send("Not enough shares.")
 
         stocks = load_stocks()
-
         price = stocks[stock]["price"]
 
         revenue = price * amount
@@ -236,44 +224,6 @@ class Stocks(commands.Cog):
         await ctx.send(
             f"📉 Sold **{amount}** {stock} shares for **{revenue}** coins."
         )
-
-    # -------------------------
-    # CLAIM SETTLED SHARES
-    # -------------------------
-
-    @commands.command()
-    async def claim(self, ctx):
-
-        coins = ensure_user(ctx.author.id)
-
-        user = coins[str(ctx.author.id)]
-
-        pending = user["pending_portfolio"]
-
-        now = time.time()
-
-        claimed = 0
-
-        for lot in pending[:]:
-
-            if lot["settles_at"] <= now:
-
-                stock = lot["stock"]
-
-                qty = lot["shares"]
-
-                user["portfolio"][stock] = user["portfolio"].get(stock, 0) + qty
-
-                pending.remove(lot)
-
-                claimed += qty
-
-        save_coins(coins)
-
-        if claimed == 0:
-            return await ctx.send("No shares ready.")
-
-        await ctx.send(f"✅ Claimed **{claimed}** shares.")
 
 
 async def setup(bot):
