@@ -12,7 +12,10 @@ class Social(commands.Cog):
     # INSULT
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="insult",
+        description="Insult another user."
+    )
     async def insult(self, ctx, member: discord.Member):
 
         if member.bot:
@@ -44,7 +47,10 @@ class Social(commands.Cog):
     # THREATEN
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="threaten",
+        description="Threaten another user."
+    )
     async def threaten(self, ctx, member: discord.Member):
 
         lines = [
@@ -65,7 +71,10 @@ class Social(commands.Cog):
     # WARN
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="warn",
+        description="Warn another user."
+    )
     async def warn(self, ctx, member: discord.Member):
 
         lines = [
@@ -86,7 +95,10 @@ class Social(commands.Cog):
     # COMPLIMENT
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="compliment",
+        description="Compliment another user."
+    )
     async def compliment(self, ctx, member: discord.Member):
 
         lines = [
@@ -105,7 +117,10 @@ class Social(commands.Cog):
     # STAB
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="stab",
+        description="Stab another user."
+    )
     async def stab(self, ctx, member: discord.Member):
 
         await ctx.send(
@@ -116,7 +131,10 @@ class Social(commands.Cog):
     # LICK
     # -------------------------
 
-    @commands.command()
+    @commands.hybrid_command(
+        name="lick",
+        description="Lick another user."
+    )
     async def lick(self, ctx, member: discord.Member):
 
         await ctx.send(
