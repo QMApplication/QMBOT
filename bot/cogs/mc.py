@@ -14,6 +14,14 @@ from config import (
 EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 
+def make_embed(title: str, description: str = "") -> discord.Embed:
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=EMBED_COLOR
+    )
+
+
 def _safe_join_url(label: str, url: str) -> str:
     return f"{label}: {url}"
 
@@ -71,11 +79,7 @@ class Minecraft(commands.Cog):
             "Add the address in Multiplayer and join."
         ]
 
-        embed = discord.Embed(
-            title=MC_NAME,
-            description="\n".join(desc_lines),
-            color=EMBED_COLOR
-        )
+        embed = make_embed(MC_NAME, "\n".join(desc_lines))
 
         embed.add_field(name="Version", value=f"`{MC_VERSION}`", inline=True)
         embed.add_field(name="Loader", value=f"`{MC_LOADER}`", inline=True)
