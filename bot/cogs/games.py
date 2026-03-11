@@ -49,28 +49,28 @@ def hand_value(hand: list[str]) -> int:
     return total
 
 
-def render_card(card: str) -> list[str]:
+def render_card(card: str) -> str:
     rank = card[:-1]
     suit = card[-1]
     middle = rank.center(3)
 
-    return [
-        "+-----+",
-        f"|{suit:<5}|",
-        f"|{middle}|",
-        f"|{suit:>5}|",
-        "+-----+",
-    ]
+    return "\n".join([
+        "┌─────┐",
+        f"│{suit:<5}│",
+        f"│ {middle} │",
+        f"│{suit:>5}│",
+        "└─────┘",
+    ])
 
 
-def render_hidden_card() -> list[str]:
-    return [
-        "+-----+",
-        "|     |",
-        "|  ♔  |",
-        "|     |",
-        "+-----+",
-    ]
+def render_hidden_card() -> str:
+    return "\n".join([
+        "┌─────┐",
+        "│     │",
+        "│  ♔  │",
+        "│     │",
+        "└─────┘",
+    ])
 
 
 def combine_cards(cards: list[str], hide_second: bool = False) -> str:
