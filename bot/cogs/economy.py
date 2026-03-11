@@ -17,10 +17,6 @@ from config import (
 EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 
-# -------------------------
-# USER INITIALISATION
-# -------------------------
-
 def ensure_user(coins, user_id):
     uid = str(user_id)
 
@@ -57,11 +53,11 @@ class Economy(commands.Cog):
 
         embed = discord.Embed(
             title=f"{member.display_name} — Balance",
+            description="Current funds",
             color=EMBED_COLOR
         )
-        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=True)
-        embed.add_field(name="Bank", value=f"`{user['bank']}`", inline=True)
-        embed.set_footer(text="Current funds")
+        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=True)
+        embed.add_field(name="♕ QMBank", value=f"`{user['bank']}`", inline=True)
 
         await ctx.send(embed=embed)
 
@@ -93,12 +89,12 @@ class Economy(commands.Cog):
         save_coins(coins)
 
         embed = discord.Embed(
-            title="Transfer Complete",
-            description=f"Moved **{amount}** coins into your bank.",
+            title="Deposit Complete",
+            description=f"Moved **{amount}** coins into **QMBank**.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=True)
-        embed.add_field(name="Bank", value=f"`{user['bank']}`", inline=True)
+        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=True)
+        embed.add_field(name="♕ QMBank", value=f"`{user['bank']}`", inline=True)
 
         await ctx.send(embed=embed)
 
@@ -130,12 +126,12 @@ class Economy(commands.Cog):
         save_coins(coins)
 
         embed = discord.Embed(
-            title="Transfer Complete",
+            title="Withdrawal Complete",
             description=f"Moved **{amount}** coins into your wallet.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=True)
-        embed.add_field(name="Bank", value=f"`{user['bank']}`", inline=True)
+        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=True)
+        embed.add_field(name="♕ QMBank", value=f"`{user['bank']}`", inline=True)
 
         await ctx.send(embed=embed)
 
@@ -180,7 +176,7 @@ class Economy(commands.Cog):
             description=f"You received **{reward}** coins.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
+        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -214,7 +210,7 @@ class Economy(commands.Cog):
             description=f"Someone gave you **{amount}** coins.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
+        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -252,7 +248,7 @@ class Economy(commands.Cog):
             description=f"{ctx.author.mention} sent **{amount}** coins to {member.mention}.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="Your Wallet", value=f"`{sender['wallet']}`", inline=False)
+        embed.add_field(name="¢ Wallet", value=f"`{sender['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -290,7 +286,7 @@ class Economy(commands.Cog):
                 description=f"You took **{steal}** coins from {member.mention}.",
                 color=EMBED_COLOR
             )
-            embed.add_field(name="Your Wallet", value=f"`{robber['wallet']}`", inline=False)
+            embed.add_field(name="¢ Wallet", value=f"`{robber['wallet']}`", inline=False)
         else:
             fine = random.randint(5, 30)
             robber["wallet"] = max(0, robber["wallet"] - fine)
@@ -300,7 +296,7 @@ class Economy(commands.Cog):
                 description=f"The attempt failed. You lost **{fine}** coins.",
                 color=EMBED_COLOR
             )
-            embed.add_field(name="Your Wallet", value=f"`{robber['wallet']}`", inline=False)
+            embed.add_field(name="¢ Wallet", value=f"`{robber['wallet']}`", inline=False)
 
         save_coins(coins)
         await ctx.send(embed=embed)
@@ -344,10 +340,10 @@ class Economy(commands.Cog):
 
         embed = discord.Embed(
             title="Bank Robbery Result",
-            description=f"You stole **{amount}** coins from {member.mention}'s bank.",
+            description=f"You stole **{amount}** coins from {member.mention}'s **QMBank**.",
             color=EMBED_COLOR
         )
-        embed.add_field(name="Your Wallet", value=f"`{robber['wallet']}`", inline=False)
+        embed.add_field(name="¢ Wallet", value=f"`{robber['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -381,7 +377,7 @@ class Economy(commands.Cog):
             description="\n".join(lines) if lines else "No data.",
             color=EMBED_COLOR
         )
-        embed.set_footer(text="Wallet + bank")
+        embed.set_footer(text="¢ Wallet + ♕ QMBank")
 
         await ctx.send(embed=embed)
 
