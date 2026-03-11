@@ -10,14 +10,29 @@ from storage import (
     load_shop_stock,
     save_shop_stock,
 )
+
 from config import SHOP_ITEMS, ITEM_PRICES
 
 
 EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 SHOP_RESTOCK_MINUTES = 30
-SHOP_MAX_STOCK = 10
 
+# -------------------------
+# ITEM MAX STOCK RULES
+# -------------------------
+
+MAX_STOCK = {
+    "Anime body pillow": 10,
+    "Oreo plush": 10,
+    "Rtx5090": 8,
+    "Crash token": 3,
+}
+
+
+# -------------------------
+# USER / INVENTORY
+# -------------------------
 
 def ensure_user(coins: dict, user_id: int | str) -> dict:
     uid = str(user_id)
@@ -40,80 +55,51 @@ def ensure_inventory(inv: dict, user_id: int | str) -> dict:
     return inv[uid]
 
 
-def weighted_stock_for_price(price: int, min_price: int, max_price: int) -> int:
+# -------------------------
+# STOCK GENERATION
+# -------------------------
+
+def generate_shop_stock() -> dict:
     """
-    Cheap items restock more often and in higher amounts.
-    Expensive items restock less often and in smaller amounts.
-
-    Non-cumulative: each restock computes a fresh stock value.
+    Creates a fresh shop stock based on item price.
+    Cheaper items appear more often and with more stock.
     """
-    if max_price <= min_price:
-        return random.randint(1, SHOP_MAX_STOCK)
 
-    # affordability score:
-    # cheapest item -> 1.0
-    # most expensive item -> 0.0
-    score = 1.0 - ((price - min_price) / (max_price - min_price))
-    score = max(0.0, min(1.0, score))
+    prices = [ITEM_PRICES[i] for i in SHOP_ITEMS]
 
-    # chance item appears at all
-    # cheap items: very likely
-    # expensive items: less likely
-    appear_chance = 0.15 + (score * 0.85)
-
-    if random.random() > appear_chance:
-        return 0
-
-    # max stock based on affordability
-    # cheap items can go high, expensive items stay low
-    upper = max(1, int(round(1 + score * (SHOP_MAX_STOCK - 1))))
-
-    # bias distribution toward lower numbers for expensive items
-    # and higher numbers for cheaper items
-    if upper <= 2:
-        return random.randint(1, upper)
-
-    roll = random.random()
-
-    if score >= 0.75:
-        # cheap items: usually medium-high stock
-        if roll < 0.15:
-            return random.randint(1, max(1, upper // 3))
-        elif roll < 0.50:
-            return random.randint(max(1, upper // 3), max(1, (2 * upper) // 3))
-        else:
-            return random.randint(max(1, (2 * upper) // 3), upper)
-
-    if score >= 0.40:
-        # mid-priced items: usually medium or low-medium
-        if roll < 0.35:
-            return random.randint(1, max(1, upper // 3))
-        elif roll < 0.80:
-            return random.randint(max(1, upper // 3), max(1, (2 * upper) // 3))
-        else:
-            return random.randint(max(1, (2 * upper) // 3), upper)
-
-    # expensive items: usually low stock
-    if roll < 0.75:
-        return random.randint(1, max(1, upper // 2))
-    return random.randint(max(1, upper // 2), upper)
-
-
-def generate_fresh_shop_stock() -> dict:
-    prices = [int(ITEM_PRICES[item]) for item in SHOP_ITEMS]
     min_price = min(prices)
     max_price = max(prices)
 
     stock = {}
 
     for item in SHOP_ITEMS:
-        price = int(ITEM_PRICES[item])
-        stock[item] = weighted_stock_for_price(price, min_price, max_price)
+
+        price = ITEM_PRICES[item]
+
+        # affordability score
+        score = 1 - ((price - min_price) / (max_price - min_price))
+
+        score = max(0, min(1, score))
+
+        max_item_stock = MAX_STOCK.get(item, 5)
+
+        # chance item appears at all
+        appear_chance = 0.15 + (score * 0.85)
+
+        if random.random() > appear_chance:
+            stock[item] = 0
+            continue
+
+        # cheaper items get higher possible stock
+        upper = max(1, int(round(1 + score * (max_item_stock - 1))))
+
+        stock[item] = random.randint(1, upper)
 
     return stock
 
 
 def ensure_shop_stock(stock: dict) -> dict:
+
     changed = False
 
     for item in SHOP_ITEMS:
@@ -122,35 +108,42 @@ def ensure_shop_stock(stock: dict) -> dict:
 
     for item in list(stock.keys()):
         if item not in SHOP_ITEMS:
-            stock.pop(item, None)
+            stock.pop(item)
             changed = True
 
     if changed:
-        stock = generate_fresh_shop_stock()
+        stock = generate_shop_stock()
         save_shop_stock(stock)
 
     return stock
 
 
+# -------------------------
+# SHOP COG
+# -------------------------
+
 class Shop(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+
+    def __init__(self, bot):
         self.bot = bot
-        self.restock_shop.start()
+        self.restock.start()
 
     def cog_unload(self):
-        self.restock_shop.cancel()
+        self.restock.cancel()
 
     # -------------------------
     # RESTOCK LOOP
     # -------------------------
 
     @tasks.loop(minutes=SHOP_RESTOCK_MINUTES)
-    async def restock_shop(self):
-        stock = generate_fresh_shop_stock()
-        save_shop_stock(stock)
+    async def restock(self):
 
-    @restock_shop.before_loop
-    async def before_restock_shop(self):
+        new_stock = generate_shop_stock()
+
+        save_shop_stock(new_stock)
+
+    @restock.before_loop
+    async def before_restock(self):
         await self.bot.wait_until_ready()
 
     # -------------------------
@@ -162,21 +155,26 @@ class Shop(commands.Cog):
         description="View the shop."
     )
     async def shop(self, ctx: commands.Context):
+
         stock = load_shop_stock()
         stock = ensure_shop_stock(stock)
 
+        # order items by price (lowest → highest)
+        ordered_items = sorted(SHOP_ITEMS, key=lambda x: ITEM_PRICES[x])
+
         rows = []
 
-        for item in SHOP_ITEMS:
-            qty = int(stock.get(item, 0))
-            price = int(ITEM_PRICES.get(item, 0))
+        for item in ordered_items:
 
-            item_name = item[:22]
+            price = ITEM_PRICES[item]
+            qty = stock.get(item, 0)
+
             row = (
-                f"{item_name.ljust(22)} | "
+                f"{item[:22].ljust(22)} | "
                 f"{str(qty).rjust(5)} | "
                 f"{str(price).rjust(8)}"
             )
+
             rows.append(row)
 
         table = (
@@ -192,7 +190,8 @@ class Shop(commands.Cog):
             description=table,
             color=EMBED_COLOR
         )
-        embed.set_footer(text="Fresh restock every 30 minutes")
+
+        embed.set_footer(text="Restocks every 30 minutes")
 
         await ctx.send(embed=embed)
 
@@ -205,23 +204,25 @@ class Shop(commands.Cog):
         description="Buy an item from the shop."
     )
     async def buyitem(self, ctx: commands.Context, *, item: str):
+
         item = item.strip()
 
         if item not in SHOP_ITEMS:
             return await ctx.send("Item not found.")
 
-        price = int(ITEM_PRICES[item])
+        price = ITEM_PRICES[item]
 
         coins = load_coins()
         user = ensure_user(coins, ctx.author.id)
 
-        if int(user["wallet"]) < price:
+        if user["wallet"] < price:
             return await ctx.send("Not enough coins.")
 
         stock = load_shop_stock()
         stock = ensure_shop_stock(stock)
 
-        current_stock = int(stock.get(item, 0))
+        current_stock = stock.get(item, 0)
+
         if current_stock <= 0:
             return await ctx.send("That item is out of stock.")
 
@@ -229,7 +230,9 @@ class Shop(commands.Cog):
         user_inv = ensure_inventory(inv, ctx.author.id)
 
         user["wallet"] -= price
-        user_inv[item] = int(user_inv.get(item, 0)) + 1
+
+        user_inv[item] = user_inv.get(item, 0) + 1
+
         stock[item] = current_stock - 1
 
         save_coins(coins)
@@ -238,12 +241,13 @@ class Shop(commands.Cog):
 
         embed = discord.Embed(
             title="Purchase Complete",
-            description=f"Bought **{item}**.",
+            description=f"Bought **{item}**",
             color=EMBED_COLOR
         )
-        embed.add_field(name="Cost", value=f"`{price}`", inline=True)
-        embed.add_field(name="Stock Left", value=f"`{stock[item]}`", inline=True)
-        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=True)
+
+        embed.add_field(name="Cost", value=f"`{price}`")
+        embed.add_field(name="Stock Left", value=f"`{stock[item]}`")
+        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`")
 
         await ctx.send(embed=embed)
 
@@ -256,6 +260,7 @@ class Shop(commands.Cog):
         description="View your inventory."
     )
     async def inventory(self, ctx: commands.Context, member: discord.Member = None):
+
         member = member or ctx.author
 
         inv = load_inventory()
@@ -267,8 +272,9 @@ class Shop(commands.Cog):
         rows = []
 
         for item, qty in user_inv.items():
-            item_name = str(item)[:24]
-            row = f"{item_name.ljust(24)} | {str(qty).rjust(5)}"
+
+            row = f"{item[:24].ljust(24)} | {str(qty).rjust(5)}"
+
             rows.append(row)
 
         table = (
@@ -284,10 +290,11 @@ class Shop(commands.Cog):
             description=table,
             color=EMBED_COLOR
         )
+
         embed.set_footer(text="Stored items")
 
         await ctx.send(embed=embed)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot):
     await bot.add_cog(Shop(bot))
