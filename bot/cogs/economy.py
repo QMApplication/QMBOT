@@ -41,7 +41,6 @@ class Economy(commands.Cog):
     # -------------------------
     # BALANCE
     # -------------------------
-
     @commands.hybrid_command(
         name="baltop",
         description="Show the richest users."
@@ -86,6 +85,7 @@ class Economy(commands.Cog):
         )
 
         await ctx.send(embed=embed)
+    
         
     # -------------------------
     # DEPOSIT
