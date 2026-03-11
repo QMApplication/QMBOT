@@ -92,24 +92,71 @@ class Stocks(commands.Cog):
                 color=discord.Color.blue()
             )
             embed.add_field(name="Price", value=price)
-            embed.add_field(name="Change", value=change)
+            embed.add_field(name="Change", value=f"{change:+}")
             embed.add_field(name="Chart", value="Not enough history yet.")
             return await ctx.send(embed=embed)
 
         x = np.arange(len(history))
         y = np.array(history, dtype=float)
 
-        plt.figure(figsize=(7, 4))
-        plt.plot(x, y, marker="o")
-        plt.title(f"{stock_name} Price History")
-        plt.xlabel("Update")
-        plt.ylabel("Price")
-        plt.grid(True)
+        # --- dark chart styling ---
+        fig, ax = plt.subplots(figsize=(9, 5), dpi=140)
+        fig.patch.set_facecolor("#0f1117")
+        ax.set_facecolor("#0f1117")
+
+        # blue line kept as requested
+        ax.plot(
+            x,
+            y,
+            color="blue",
+            linewidth=2.2,
+            solid_capstyle="round"
+        )
+
+        # subtle fill under line
+        ax.fill_between(x, y, y.min(), color="blue", alpha=0.10)
+
+        # thin grid lines
+        ax.grid(
+            True,
+            which="major",
+            linestyle="-",
+            linewidth=0.45,
+            alpha=0.18,
+            color="white"
+        )
+
+        # spines
+        for spine in ax.spines.values():
+            spine.set_color("#7f8ea3")
+            spine.set_linewidth(0.8)
+
+        # labels/ticks
+        ax.tick_params(axis="x", colors="#d6deeb", labelsize=9)
+        ax.tick_params(axis="y", colors="#d6deeb", labelsize=9)
+        ax.set_title(f"{stock_name} Price History", color="white", fontsize=15, pad=12)
+        ax.set_xlabel("Market Updates", color="#d6deeb", fontsize=10, labelpad=8)
+        ax.set_ylabel("Price", color="#d6deeb", fontsize=10, labelpad=8)
+
+        # padding so line isn't glued to borders
+        ymin = float(y.min())
+        ymax = float(y.max())
+        pad = max(2.0, (ymax - ymin) * 0.12 if ymax > ymin else ymax * 0.08 + 2)
+        ax.set_ylim(max(0, ymin - pad), ymax + pad)
+
+        # mark latest point
+        ax.scatter([x[-1]], [y[-1]], color="blue", s=28, zorder=3)
+
+        plt.tight_layout()
 
         buf = io.BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf, format="png")
-        plt.close()
+        plt.savefig(
+            buf,
+            format="png",
+            facecolor=fig.get_facecolor(),
+            bbox_inches="tight"
+        )
+        plt.close(fig)
         buf.seek(0)
 
         file = discord.File(buf, filename="stock.png")
@@ -120,6 +167,7 @@ class Stocks(commands.Cog):
         )
         embed.add_field(name="Price", value=price)
         embed.add_field(name="Change", value=f"{change:+}")
+        embed.add_field(name="Points", value=str(len(history)))
         embed.set_image(url="attachment://stock.png")
 
         await ctx.send(embed=embed, file=file)
