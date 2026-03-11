@@ -5,6 +5,9 @@ from discord.ext import commands
 from storage import load_coins, save_coins
 
 
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+
+
 def ensure_user(coins: dict, user_id: int | str) -> dict:
     uid = str(user_id)
 
@@ -17,7 +20,6 @@ def ensure_user(coins: dict, user_id: int | str) -> dict:
     return coins[uid]
 
 
-# active blackjack sessions
 BLACKJACK_GAMES: dict[str, dict] = {}
 
 
@@ -53,11 +55,10 @@ class Games(commands.Cog):
         result = random.choice(["Heads", "Tails"])
 
         embed = discord.Embed(
-            title="🪙 Coin Flip",
-            description=f"The coin landed on **{result}**",
-            color=discord.Color.blue()
+            title="Coin Flip",
+            description=f"Result: **{result}**",
+            color=EMBED_COLOR
         )
-
         await ctx.send(embed=embed)
 
     # -------------------------
@@ -94,12 +95,23 @@ class Games(commands.Cog):
         if win:
             winnings = bet * 2
             user["wallet"] += winnings
-            msg = f"🎉 You won **{winnings}** coins!"
+
+            embed = discord.Embed(
+                title="Gamble Result",
+                description=f"You won **{winnings}** coins.",
+                color=EMBED_COLOR
+            )
+            embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
         else:
-            msg = f"💀 You lost **{bet}** coins."
+            embed = discord.Embed(
+                title="Gamble Result",
+                description=f"You lost **{bet}** coins.",
+                color=EMBED_COLOR
+            )
+            embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
 
         save_coins(coins)
-        await ctx.send(msg)
+        await ctx.send(embed=embed)
 
     # -------------------------
     # BLACKJACK START
@@ -147,7 +159,6 @@ class Games(commands.Cog):
 
         player_total = hand_value(player)
 
-        # natural blackjack check
         if player_total == 21:
             dealer_total = hand_value(dealer)
 
@@ -158,36 +169,38 @@ class Games(commands.Cog):
             if dealer_total != 21:
                 winnings = amount * 2
                 user["wallet"] += winnings
-                result_msg = f"🎉 Natural blackjack! You won **{winnings}** coins."
-                color = discord.Color.green()
+                result_msg = f"Natural blackjack. You won **{winnings}** coins."
+                color = EMBED_COLOR
             else:
                 user["wallet"] += amount
-                result_msg = f"🤝 Push. Both had blackjack. Your **{amount}** coins were returned."
-                color = discord.Color.gold()
+                result_msg = f"Push. Both hands hit blackjack. Your **{amount}** coins were returned."
+                color = EMBED_COLOR
 
             save_coins(coins)
             del BLACKJACK_GAMES[uid]
 
             embed = discord.Embed(
-                title="🃏 Blackjack Result",
+                title="Blackjack Result",
                 description=(
-                    f"Your hand: {player} (**{player_total}**)\n"
-                    f"Dealer hand: {dealer} (**{dealer_total}**)\n\n"
+                    f"Your hand: `{player}`  ({player_total})\n"
+                    f"Dealer hand: `{dealer}`  ({dealer_total})\n\n"
                     f"{result_msg}"
                 ),
                 color=color
             )
+            embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
             return await ctx.send(embed=embed)
 
         embed = discord.Embed(
-            title="🃏 Blackjack",
+            title="Blackjack",
             description=(
-                f"Your hand: {player} (**{player_total}**)\n"
-                f"Dealer: [{dealer[0]}, ?]\n\n"
-                "Use `!hit` / `/hit` or `!stand` / `/stand`."
+                f"Your hand: `{player}`  ({player_total})\n"
+                f"Dealer hand: `[{dealer[0]}, ?]`\n\n"
+                "Use `hit` or `stand`."
             ),
-            color=discord.Color.blurple()
+            color=EMBED_COLOR
         )
+        embed.add_field(name="Bet", value=f"`{amount}`", inline=False)
 
         await ctx.send(embed=embed)
 
@@ -216,19 +229,22 @@ class Games(commands.Cog):
             del BLACKJACK_GAMES[uid]
 
             embed = discord.Embed(
-                title="💥 Bust!",
-                description=f"Your hand: {busted_hand} (**{value}**)\nYou lost **{bet}** coins.",
-                color=discord.Color.red()
+                title="Blackjack Result",
+                description=(
+                    f"Your hand: `{busted_hand}`  ({value})\n\n"
+                    f"Bust. You lost **{bet}** coins."
+                ),
+                color=EMBED_COLOR
             )
             return await ctx.send(embed=embed)
 
         embed = discord.Embed(
-            title="🃏 You drew a card",
+            title="Blackjack",
             description=(
-                f"Your hand: {game['player']} (**{value}**)\n\n"
-                "Use `!hit` / `/hit` or `!stand` / `/stand`."
+                f"Your hand: `{game['player']}`  ({value})\n\n"
+                "Use `hit` or `stand`."
             ),
-            color=discord.Color.blurple()
+            color=EMBED_COLOR
         )
 
         await ctx.send(embed=embed)
@@ -266,15 +282,12 @@ class Games(commands.Cog):
         if dealer_val > 21 or player_val > dealer_val:
             winnings = bet * 2
             user["wallet"] += winnings
-            msg = f"🎉 You win **{winnings}** coins!"
-            color = discord.Color.green()
+            msg = f"You won **{winnings}** coins."
         elif player_val == dealer_val:
             user["wallet"] += bet
-            msg = "🤝 Push. Bet returned."
-            color = discord.Color.gold()
+            msg = f"Push. Your **{bet}** coins were returned."
         else:
-            msg = "💀 Dealer wins."
-            color = discord.Color.red()
+            msg = "Dealer wins."
 
         save_coins(coins)
         del BLACKJACK_GAMES[uid]
@@ -282,12 +295,13 @@ class Games(commands.Cog):
         embed = discord.Embed(
             title="Blackjack Result",
             description=(
-                f"Your hand: {player_hand} (**{player_val}**)\n"
-                f"Dealer hand: {dealer_hand} (**{dealer_val}**)\n\n"
+                f"Your hand: `{player_hand}`  ({player_val})\n"
+                f"Dealer hand: `{dealer_hand}`  ({dealer_val})\n\n"
                 f"{msg}"
             ),
-            color=color
+            color=EMBED_COLOR
         )
+        embed.add_field(name="Wallet", value=f"`{user['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
 
