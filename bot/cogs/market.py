@@ -49,22 +49,32 @@ class Stocks(commands.Cog):
         description="View all stock prices."
     )
     async def stocks(self, ctx: commands.Context):
-
+    
         stocks = load_stocks()
-
-        lines = []
+    
+        rows = []
+    
         for name in STOCKS:
             price = int(stocks.get(name, {}).get("price", 0))
-            lines.append(f"• **{name}**  `{price}`")
-
+    
+            short_name = name[:16]
+            row = f"{short_name.ljust(16)} | {str(price).rjust(6)}"
+            rows.append(row)
+    
+        table = (
+            "```text\n"
+            "Stock            | Price\n"
+            "------------------------\n"
+            f"{chr(10).join(rows)}\n"
+            "```"
+        )
+    
         embed = discord.Embed(
             title="Market",
-            description="\n".join(lines),
+            description=table,
             color=EMBED_COLOR
         )
         embed.set_footer(text="Live prices")
-
-        await ctx.send(embed=embed)
 
     # -------------------------
     # STOCK VALUE
