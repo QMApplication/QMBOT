@@ -254,12 +254,6 @@ def save_stickers(d):
 # Action
 # =========================
 
-import json
-from pathlib import Path
-
-ACTIONS_FILE = Path("data/actions.json")
-
-
 def load_actions():
     if not ACTIONS_FILE.exists():
         return {}
