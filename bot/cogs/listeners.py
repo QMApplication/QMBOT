@@ -1,5 +1,6 @@
 import time
 import re
+from datetime import datetime, timezone
 
 import discord
 from discord.ext import commands
@@ -47,6 +48,11 @@ SWEAR_RE = re.compile(
 SWEAR_COUNT_COOLDOWN = 2
 _LAST_SWEAR_COUNT_AT = {}  # user_id -> unix timestamp
 
+# =========================
+# Stars
+# =========================
+STAR_REACTION_EMOJIS = {"⭐", "🌟"}
+
 
 # =========================
 # Helpers
@@ -58,6 +64,10 @@ def make_embed(title: str | None = None, description: str = "", color=EMBED_COLO
     return embed
 
 
+def _today_key() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
 def ensure_user_coins(user_id):
     user_id = str(user_id)
     coins = load_coins()
@@ -66,6 +76,7 @@ def ensure_user_coins(user_id):
         coins[user_id] = {
             "wallet": 100,
             "bank": 0,
+            "stars": 0,
             "last_daily": 0,
             "last_rob": 0,
             "last_beg": 0,
@@ -75,6 +86,10 @@ def ensure_user_coins(user_id):
             "trade_meta": {
                 "last_trade_ts": {},
                 "daily": {"day": "", "count": 0}
+            },
+            "star_meta": {
+                "day": _today_key(),
+                "given": {}
             }
         }
         save_coins(coins)
@@ -85,6 +100,7 @@ def ensure_user_coins(user_id):
         defaults = {
             "wallet": 100,
             "bank": 0,
+            "stars": 0,
             "last_daily": 0,
             "last_rob": 0,
             "last_beg": 0,
@@ -94,6 +110,10 @@ def ensure_user_coins(user_id):
             "trade_meta": {
                 "last_trade_ts": {},
                 "daily": {"day": "", "count": 0}
+            },
+            "star_meta": {
+                "day": _today_key(),
+                "given": {}
             }
         }
 
@@ -101,6 +121,23 @@ def ensure_user_coins(user_id):
             if key not in data:
                 data[key] = value
                 changed = True
+
+        if not isinstance(data.get("star_meta"), dict):
+            data["star_meta"] = {
+                "day": _today_key(),
+                "given": {}
+            }
+            changed = True
+
+        data["star_meta"].setdefault("day", _today_key())
+        data["star_meta"].setdefault("given", {})
+
+        if data["star_meta"]["day"] != _today_key():
+            data["star_meta"] = {
+                "day": _today_key(),
+                "given": {}
+            }
+            changed = True
 
         if changed:
             save_coins(coins)
@@ -246,6 +283,73 @@ class Listeners(commands.Cog):
         )
         embed.set_thumbnail(url=member.display_avatar.url)
         await channel.send(embed=embed)
+
+    # -------------------------
+    # Star reactions
+    # -------------------------
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
+
+        if user.bot:
+            return
+
+        if str(reaction.emoji) not in STAR_REACTION_EMOJIS:
+            return
+
+        message = reaction.message
+
+        if not message.guild:
+            return
+
+        if message.author.bot:
+            return
+
+        if message.author.id == user.id:
+            return
+
+        coins = load_coins()
+
+        giver = ensure_user_coins(user.id)[str(user.id)]
+        coins = load_coins()
+        giver = coins[str(user.id)]
+
+        receiver = ensure_user_coins(message.author.id)[str(message.author.id)]
+        coins = load_coins()
+        giver = coins[str(user.id)]
+        receiver = coins[str(message.author.id)]
+
+        giver.setdefault("star_meta", {"day": _today_key(), "given": {}})
+        giver["star_meta"].setdefault("day", _today_key())
+        giver["star_meta"].setdefault("given", {})
+
+        if giver["star_meta"]["day"] != _today_key():
+            giver["star_meta"] = {
+                "day": _today_key(),
+                "given": {}
+            }
+
+        target_key = str(message.author.id)
+        given_today = int(giver["star_meta"]["given"].get(target_key, 0))
+
+        if given_today >= 2:
+            return
+
+        giver["star_meta"]["given"][target_key] = given_today + 1
+        receiver["stars"] = int(receiver.get("stars", 0)) + 1
+
+        save_coins(coins)
+
+        try:
+            await message.channel.send(
+                embed=make_embed(
+                    "Golden Star",
+                    f"{message.author.mention} got a **golden star** from {user.mention}.\n"
+                    f"✦ Stars: **{receiver['stars']}**"
+                ),
+                delete_after=3
+            )
+        except Exception:
+            pass
 
     # -------------------------
     # Main message listener
