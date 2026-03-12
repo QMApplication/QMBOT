@@ -69,11 +69,11 @@ def _today_key() -> str:
 
 
 def ensure_user_coins(user_id):
-    user_id = str(user_id)
+    uid = str(user_id)
     coins = load_coins()
 
-    if user_id not in coins:
-        coins[user_id] = {
+    if uid not in coins:
+        coins[uid] = {
             "wallet": 100,
             "bank": 0,
             "stars": 0,
@@ -83,6 +83,7 @@ def ensure_user_coins(user_id):
             "last_bankrob": 0,
             "portfolio": {},
             "pending_portfolio": [],
+            "active_effects": {},
             "trade_meta": {
                 "last_trade_ts": {},
                 "daily": {"day": "", "count": 0}
@@ -94,7 +95,7 @@ def ensure_user_coins(user_id):
         }
         save_coins(coins)
     else:
-        data = coins[user_id]
+        data = coins[uid]
         changed = False
 
         defaults = {
@@ -107,6 +108,7 @@ def ensure_user_coins(user_id):
             "last_bankrob": 0,
             "portfolio": {},
             "pending_portfolio": [],
+            "active_effects": {},
             "trade_meta": {
                 "last_trade_ts": {},
                 "daily": {"day": "", "count": 0}
@@ -121,6 +123,10 @@ def ensure_user_coins(user_id):
             if key not in data:
                 data[key] = value
                 changed = True
+
+        if not isinstance(data.get("active_effects"), dict):
+            data["active_effects"] = {}
+            changed = True
 
         if not isinstance(data.get("star_meta"), dict):
             data["star_meta"] = {
@@ -224,7 +230,6 @@ async def update_xp(bot: commands.Bot, user_id: int, guild_id: int, xp_amount: i
     if not guild:
         return
 
-    # milestone announcement
     if new_level > prev_level and new_level % 5 == 0:
         channel = bot.get_channel(LEVEL_ANNOUNCE_CHANNEL_ID)
         if channel:
@@ -239,7 +244,6 @@ async def update_xp(bot: commands.Bot, user_id: int, guild_id: int, xp_amount: i
             except Exception:
                 pass
 
-    # level role
     if new_level > prev_level and new_level % 10 == 0:
         role_name = f"Level {new_level}"
         role = discord.utils.get(guild.roles, name=role_name)
@@ -289,7 +293,6 @@ class Listeners(commands.Cog):
     # -------------------------
     @commands.Cog.listener()
     async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
-
         if user.bot:
             return
 
@@ -308,13 +311,11 @@ class Listeners(commands.Cog):
             return
 
         coins = load_coins()
-
-        giver = ensure_user_coins(user.id)[str(user.id)]
+        ensure_user_coins(user.id)
         coins = load_coins()
-        giver = coins[str(user.id)]
-
-        receiver = ensure_user_coins(message.author.id)[str(message.author.id)]
+        ensure_user_coins(message.author.id)
         coins = load_coins()
+
         giver = coins[str(user.id)]
         receiver = coins[str(message.author.id)]
 
@@ -359,9 +360,6 @@ class Listeners(commands.Cog):
         if message.author.bot:
             return
 
-        # =========================
-        # Swear Jar (guild only)
-        # =========================
         if message.guild:
             try:
                 now_ts = time.time()
@@ -400,9 +398,6 @@ class Listeners(commands.Cog):
             except Exception as e:
                 print(f"[SwearJar] failed: {type(e).__name__}: {e}")
 
-        # =========================
-        # Word filter
-        # =========================
         if message.guild and "rigged" in (message.content or "").lower():
             try:
                 await message.delete()
@@ -418,13 +413,9 @@ class Listeners(commands.Cog):
             )
             return
 
-        # =========================
-        # AFK + XP
-        # =========================
         if message.guild:
             key = f"{message.guild.id}-{message.author.id}"
 
-            # Remove AFK if user speaks
             if key in AFK_STATUS:
                 del AFK_STATUS[key]
                 await message.channel.send(
@@ -434,7 +425,6 @@ class Listeners(commands.Cog):
                     )
                 )
 
-            # Notify if mentioning AFK users
             for user in message.mentions:
                 mention_key = f"{message.guild.id}-{user.id}"
                 if mention_key in AFK_STATUS:
@@ -446,7 +436,6 @@ class Listeners(commands.Cog):
                         )
                     )
 
-            # XP update
             try:
                 await update_xp(
                     self.bot,
