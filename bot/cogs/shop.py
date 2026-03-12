@@ -17,11 +17,8 @@ from storage import (
     save_stocks,
 )
 
-
 EMBED_COLOR = discord.Color.from_rgb(68, 34, 102)
-
 SHOP_RESTOCK_MINUTES = 30
-
 
 # =========================
 # Shop definitions
@@ -57,9 +54,7 @@ STAR_SHOP_ITEMS = {
     "Crash token": {
         "price": 2,
         "max_stock": 2,
-        "description": (
-            "Halves the current price of a stock that you choose."
-        ),
+        "description": "Halves the current price of a stock that you choose.",
     },
     "Fwiz's USB": {
         "price": 10,
@@ -71,9 +66,7 @@ STAR_SHOP_ITEMS = {
     "Imran's Nose": {
         "price": 100,
         "max_stock": 1,
-        "description": (
-            "Resets all JSON files except the action command data."
-        ),
+        "description": "Resets all JSON files except the action command data.",
     },
 }
 
@@ -85,15 +78,7 @@ BANK_NOTE_WHEEL = [1, 5, 10, 20, 50, 100, 200, 250, 1000, 1500, 2000, "JACKPOT"]
 # =========================
 
 def make_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(
-        title=title,
-        description=description,
-        color=EMBED_COLOR
-    )
-
-
-def _today_key() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return discord.Embed(title=title, description=description, color=EMBED_COLOR)
 
 
 def ensure_user(coins: dict, user_id: int | str) -> dict:
@@ -105,7 +90,7 @@ def ensure_user(coins: dict, user_id: int | str) -> dict:
             "bank": 0,
             "stars": 0,
             "portfolio": {},
-            "active_effects": {}
+            "active_effects": {},
         }
     else:
         coins[uid].setdefault("wallet", 100)
@@ -173,7 +158,6 @@ def generate_stock(items: dict) -> dict:
             score = 1 - ((price - min_price) / (max_price - min_price))
 
         score = max(0, min(1, score))
-
         appear_chance = 0.15 + (score * 0.85)
 
         if random.random() > appear_chance:
@@ -221,12 +205,11 @@ def _format_shop_table(items: list[str], stock_map: dict, price_map: dict) -> st
         price = price_map[item]
         qty = stock_map.get(item, 0)
 
-        row = (
+        rows.append(
             f"{item[:16].ljust(16)} | "
             f"{str(qty).rjust(3)} | "
             f"{str(price).rjust(6)}"
         )
-        rows.append(row)
 
     return (
         "```text\n"
@@ -241,11 +224,10 @@ def _format_inventory_table(user_inv: dict) -> str:
     rows = []
 
     for item, qty in sorted(user_inv.items()):
-        row = (
+        rows.append(
             f"{item[:16].ljust(16)} | "
             f"{str(qty).rjust(3)}"
         )
-        rows.append(row)
 
     return (
         "```text\n"
@@ -269,7 +251,7 @@ def _bank_note_reward() -> int:
         1000,
         1500,
         2000,
-        "JACKPOT"
+        "JACKPOT",
     ]
     choice = random.choice(weighted)
     return 5000 if choice == "JACKPOT" else int(choice)
@@ -365,17 +347,12 @@ class ConfirmClaimView(discord.ui.View):
 # =========================
 
 class Shop(commands.Cog):
-
     def __init__(self, bot):
         self.bot = bot
         self.restock.start()
 
     def cog_unload(self):
         self.restock.cancel()
-
-    # -------------------------
-    # RESTOCK LOOP
-    # -------------------------
 
     @tasks.loop(minutes=SHOP_RESTOCK_MINUTES)
     async def restock(self):
@@ -384,10 +361,6 @@ class Shop(commands.Cog):
     @restock.before_loop
     async def before_restock(self):
         await self.bot.wait_until_ready()
-
-    # -------------------------
-    # SHOP
-    # -------------------------
 
     @commands.hybrid_command(
         name="shop",
@@ -407,12 +380,7 @@ class Shop(commands.Cog):
             color=EMBED_COLOR
         )
         embed.set_footer(text="Coin shop • restocks every 30 minutes")
-
         await ctx.send(embed=embed)
-
-    # -------------------------
-    # STAR SHOP
-    # -------------------------
 
     @commands.hybrid_command(
         name="starshop",
@@ -432,12 +400,7 @@ class Shop(commands.Cog):
             color=EMBED_COLOR
         )
         embed.set_footer(text="Star shop • prices are in ✦ stars • restocks every 30 minutes")
-
         await ctx.send(embed=embed)
-
-    # -------------------------
-    # BUY ITEM
-    # -------------------------
 
     @commands.hybrid_command(
         name="buyitem",
@@ -485,10 +448,6 @@ class Shop(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    # -------------------------
-    # BUY STAR ITEM
-    # -------------------------
-
     @commands.hybrid_command(
         name="buystaritem",
         description="Buy an item from the star shop."
@@ -535,10 +494,6 @@ class Shop(commands.Cog):
 
         await ctx.send(embed=embed)
 
-    # -------------------------
-    # INVENTORY
-    # -------------------------
-
     @commands.hybrid_command(
         name="inventory",
         description="View your inventory."
@@ -560,12 +515,7 @@ class Shop(commands.Cog):
             color=EMBED_COLOR
         )
         embed.set_footer(text="Stored items")
-
         await ctx.send(embed=embed)
-
-    # -------------------------
-    # INFO
-    # -------------------------
 
     @commands.hybrid_command(
         name="info",
@@ -614,12 +564,7 @@ class Shop(commands.Cog):
                 f"{meta['description']}"
             )
         )
-
         await ctx.send(embed=embed)
-
-    # -------------------------
-    # CLAIM
-    # -------------------------
 
     @commands.hybrid_command(
         name="claim",
@@ -638,14 +583,10 @@ class Shop(commands.Cog):
             return await ctx.send(embed=make_embed("Claim", "You do not own that item."))
 
         if real_item == "Crash token":
-            return await ctx.send(
-                embed=make_embed("Claim", "Use `/claimcrash <stock>` for Crash token.")
-            )
+            return await ctx.send(embed=make_embed("Claim", "Use `/claimcrash <stock>` for Crash token."))
 
         if real_item == "Fwiz's USB":
-            return await ctx.send(
-                embed=make_embed("Claim", "Use `/claimusb <member> <stock>` for Fwiz's USB.")
-            )
+            return await ctx.send(embed=make_embed("Claim", "Use `/claimusb <member> <stock>` for Fwiz's USB."))
 
         async def do_claim(interaction: discord.Interaction):
             inv_data = load_inventory()
@@ -681,26 +622,27 @@ class Shop(commands.Cog):
 
                 embed = make_embed(
                     "Claimed: Pocket PC",
-                    "Comfort buff activated for **1 hour**.\n"
-                    "Your robbery defense is now stronger."
+                    "Comfort buff activated for **1 hour**.\nYour robbery defense is now stronger."
                 )
                 await interaction.message.edit(embed=embed, view=None)
 
             elif real_item == "Bank note":
-                start_embed = make_embed("Bank Note", "Spinning...")
-                await interaction.message.edit(embed=start_embed, view=None)
+                await interaction.message.edit(embed=make_embed("Bank Note", "Spinning..."), view=None)
 
                 final_reward = _bank_note_reward()
-
                 delays = [0.08, 0.10, 0.12, 0.16, 0.20, 0.28]
-                for _delay in delays:
+
+                for delay in delays:
                     values = [random.choice(BANK_NOTE_WHEEL) for _ in range(5)]
-                    spin_embed = make_embed("Bank Note", _spinner_text(values))
-                    await interaction.message.edit(embed=spin_embed, view=None)
-                    await asyncio.sleep(_delay)
+                    await interaction.message.edit(
+                        embed=make_embed("Bank Note", _spinner_text(values)),
+                        view=None
+                    )
+                    await asyncio.sleep(delay)
 
                 final_values = [random.choice(BANK_NOTE_WHEEL) for _ in range(5)]
                 final_values[2] = final_reward
+
                 coins = load_coins()
                 user = ensure_user(coins, ctx.author.id)
                 user["wallet"] += final_reward
@@ -711,6 +653,7 @@ class Shop(commands.Cog):
                     _spinner_text(final_values) + f"\nYou won **{final_reward}** coins."
                 )
                 result_embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=False)
+
                 await interaction.message.edit(embed=result_embed, view=None)
 
             elif real_item == "Imran's Nose":
@@ -730,10 +673,6 @@ class Shop(commands.Cog):
             ),
             view=view
         )
-
-    # -------------------------
-    # CLAIM CRASH
-    # -------------------------
 
     @commands.hybrid_command(
         name="claimcrash",
@@ -802,10 +741,6 @@ class Shop(commands.Cog):
             view=view
         )
 
-    # -------------------------
-    # CLAIM USB
-    # -------------------------
-
     @commands.hybrid_command(
         name="claimusb",
         description="Claim Fwiz's USB against a user's stock."
@@ -821,7 +756,6 @@ class Shop(commands.Cog):
             return await ctx.send(embed=make_embed("Fwiz's USB", "You do not own Fwiz's USB."))
 
         coins = load_coins()
-        attacker = ensure_user(coins, ctx.author.id)
         victim = ensure_user(coins, member.id)
 
         stock_names = {s.lower(): s for s in victim.get("portfolio", {}).keys()}
