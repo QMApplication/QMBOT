@@ -4,7 +4,7 @@ from discord.ext import commands
 
 from storage import load_coins, save_coins
 
-EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+EMBED_COLOR = discord.Color.from_rgb(32, 60, 120)
 
 # Result colors
 WIN_COLOR = discord.Color.from_rgb(60, 200, 120)
@@ -172,14 +172,14 @@ class GambleView(discord.ui.View):
             self.user["wallet"] += winnings
 
             embed = discord.Embed(
-                title="WINNER 🎉",
+                title="WINNER",
                 description=f"You won **{winnings} coins**!",
                 color=WIN_COLOR
             )
 
         else:
             embed = discord.Embed(
-                title="LOSER 💀",
+                title="LOSER",
                 description=f"You lost **{self.bet} coins**.",
                 color=LOSE_COLOR
             )
