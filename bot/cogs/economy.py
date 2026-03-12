@@ -24,6 +24,27 @@ def make_embed(title: str, description: str) -> discord.Embed:
     )
 
 
+def _today_key() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def _reset_star_meta_if_needed(user: dict):
+    user.setdefault("stars", 0)
+    user.setdefault("star_meta", {"day": _today_key(), "given": {}})
+
+    if not isinstance(user["star_meta"], dict):
+        user["star_meta"] = {"day": _today_key(), "given": {}}
+
+    user["star_meta"].setdefault("day", _today_key())
+    user["star_meta"].setdefault("given", {})
+
+    if user["star_meta"]["day"] != _today_key():
+        user["star_meta"] = {
+            "day": _today_key(),
+            "given": {}
+        }
+
+
 def ensure_user(coins, user_id):
     uid = str(user_id)
 
@@ -31,11 +52,25 @@ def ensure_user(coins, user_id):
         coins[uid] = {
             "wallet": 100,
             "bank": 0,
+            "stars": 0,
             "last_daily": 0,
             "last_beg": 0,
             "last_rob": 0,
-            "last_bankrob": 0
+            "last_bankrob": 0,
+            "star_meta": {
+                "day": _today_key(),
+                "given": {}
+            }
         }
+    else:
+        coins[uid].setdefault("wallet", 100)
+        coins[uid].setdefault("bank", 0)
+        coins[uid].setdefault("stars", 0)
+        coins[uid].setdefault("last_daily", 0)
+        coins[uid].setdefault("last_beg", 0)
+        coins[uid].setdefault("last_rob", 0)
+        coins[uid].setdefault("last_bankrob", 0)
+        _reset_star_meta_if_needed(coins[uid])
 
     return coins[uid]
 
@@ -64,6 +99,7 @@ class Economy(commands.Cog):
         )
         embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`", inline=True)
         embed.add_field(name="♕ QMBank", value=f"`{user['bank']}`", inline=True)
+        embed.add_field(name="✦ Stars", value=f"`{user['stars']}`", inline=True)
 
         await ctx.send(embed=embed)
 
@@ -231,6 +267,112 @@ class Economy(commands.Cog):
         await ctx.send(embed=embed)
 
     # -------------------------
+    # STAR
+    # -------------------------
+
+    @commands.hybrid_command(
+        name="star",
+        description="Give someone a golden star."
+    )
+    async def star(self, ctx, member: discord.Member):
+
+        if member == ctx.author:
+            return await ctx.send(
+                embed=make_embed("Golden Star", "You can't give yourself a star.")
+            )
+
+        if member.bot:
+            return await ctx.send(
+                embed=make_embed("Golden Star", "You can't give stars to bots.")
+            )
+
+        coins = load_coins()
+        giver = ensure_user(coins, ctx.author.id)
+        receiver = ensure_user(coins, member.id)
+
+        _reset_star_meta_if_needed(giver)
+
+        target_key = str(member.id)
+        given_today = int(giver["star_meta"]["given"].get(target_key, 0))
+
+        if given_today >= 2:
+            return await ctx.send(
+                embed=make_embed(
+                    "Golden Star",
+                    f"You've already given **2** stars to {member.mention} today."
+                )
+            )
+
+        giver["star_meta"]["given"][target_key] = given_today + 1
+        receiver["stars"] += 1
+
+        save_coins(coins)
+
+        embed = make_embed(
+            "Golden Star Given",
+            f"{ctx.author.mention} gave {member.mention} a **golden star**."
+        )
+        embed.add_field(name=f"{member.display_name} ✦ Stars", value=f"`{receiver['stars']}`", inline=False)
+
+        await ctx.send(embed=embed)
+
+    # -------------------------
+    # STARS
+    # -------------------------
+
+    @commands.hybrid_command(
+        name="stars",
+        description="Check how many golden stars you have."
+    )
+    async def stars(self, ctx, member: discord.Member = None):
+        coins = load_coins()
+        member = member or ctx.author
+        user = ensure_user(coins, member.id)
+
+        embed = make_embed(
+            f"{member.display_name} — Stars",
+            f"✦ Golden Stars: **{user['stars']}**"
+        )
+
+        await ctx.send(embed=embed)
+
+    # -------------------------
+    # STAR LEADERBOARD
+    # -------------------------
+
+    @commands.hybrid_command(
+        name="starleaderboard",
+        description="Show the users with the most golden stars."
+    )
+    async def starleaderboard(self, ctx):
+        coins = load_coins()
+        leaderboard = []
+
+        for uid, data in coins.items():
+            stars = int(data.get("stars", 0))
+            leaderboard.append((uid, stars))
+
+        leaderboard.sort(key=lambda x: x[1], reverse=True)
+
+        blocks = []
+
+        for i, (uid, stars) in enumerate(leaderboard[:10], 1):
+            member = ctx.guild.get_member(int(uid)) if ctx.guild else None
+            name = member.display_name if member else f"User {uid}"
+            you = " ⋆ YOU" if int(uid) == ctx.author.id else ""
+
+            block = (
+                f"{i}. {name}\n"
+                f"   ✦ Stars : {stars}{you}"
+            )
+            blocks.append(block)
+
+        table = "```text\n" + "\n\n".join(blocks) + "\n```"
+
+        embed = make_embed("Star Leaderboard", table)
+        await ctx.send(embed=embed)
+
+    # -------------------------
     # BALANCE LEADERBOARD
     # -------------------------
 
@@ -269,6 +411,7 @@ class Economy(commands.Cog):
 
         embed = make_embed("Balance Leaderboard", table)
         await ctx.send(embed=embed)
+
     # -------------------------
     # ROB
     # -------------------------
@@ -291,7 +434,6 @@ class Economy(commands.Cog):
         victim = ensure_user(coins, member.id)
 
         now = time.time()
-
         cooldown = 300
 
         if now - robber["last_rob"] < cooldown:
@@ -315,7 +457,6 @@ class Economy(commands.Cog):
         success = random.random() < 0.40
 
         if success:
-
             steal = random.randint(10, min(200, victim_wallet))
 
             victim["wallet"] -= steal
@@ -329,7 +470,6 @@ class Economy(commands.Cog):
             )
 
         else:
-
             fine = random.randint(20, 60)
             robber["wallet"] = max(0, robber["wallet"] - fine)
 
@@ -343,7 +483,6 @@ class Economy(commands.Cog):
         embed.add_field(name="¢ Wallet", value=f"`{robber['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
-
 
     # -------------------------
     # BANK ROB
@@ -367,7 +506,6 @@ class Economy(commands.Cog):
         victim = ensure_user(coins, member.id)
 
         now = time.time()
-
         cooldown = 600
 
         if now - robber["last_bankrob"] < cooldown:
@@ -391,7 +529,6 @@ class Economy(commands.Cog):
         success = random.random() < 0.20
 
         if success:
-
             pct = random.uniform(BANKROB_STEAL_MIN_PCT, BANKROB_STEAL_MAX_PCT)
             amount = int(victim_bank * pct)
 
@@ -409,7 +546,6 @@ class Economy(commands.Cog):
             )
 
         else:
-
             fine = random.randint(50, 150)
             robber["wallet"] = max(0, robber["wallet"] - fine)
 
@@ -423,7 +559,7 @@ class Economy(commands.Cog):
         embed.add_field(name="¢ Wallet", value=f"`{robber['wallet']}`", inline=False)
 
         await ctx.send(embed=embed)
-        
+
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
