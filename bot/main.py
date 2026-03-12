@@ -3,7 +3,11 @@ from discord.ext import commands
 
 from config import TOKEN
 
-TEST_GUILD_ID = 1394054172583919810
+
+TEST_GUILDS = [
+    1433248052189073601,
+    1394054172583919810,
+]
 
 
 INTENTS = discord.Intents.default()
@@ -23,6 +27,9 @@ INITIAL_EXTENSIONS = [
     "cogs.coverbot",
     "cogs.tasks",
     "cogs.social",
+    "cogs.shop",
+    "cogs.market",
+    "cogs.swearjar",
 ]
 
 
@@ -52,10 +59,10 @@ class QMULBot(commands.Bot):
                 print(f"[Cog] Skipped {ext}: {type(e).__name__}: {e}")
 
         try:
-            guild = discord.Object(id=TEST_GUILD_ID)
-            self.tree.copy_global_to(guild=guild)
-            synced = await self.tree.sync(guild=guild)
-            print(f"[Slash] Synced {len(synced)} guild command(s).")
+            for guild_id in TEST_GUILDS:
+                guild = discord.Object(id=guild_id)
+                synced = await self.tree.sync(guild=guild)
+                print(f"[Slash] Synced {len(synced)} command(s) to {guild_id}.")
         except Exception as e:
             print(f"[Slash] Sync failed: {type(e).__name__}: {e}")
 
