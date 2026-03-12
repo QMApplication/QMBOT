@@ -6,6 +6,10 @@ from storage import load_coins, save_coins
 
 EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
+# Result colors
+WIN_COLOR = discord.Color.from_rgb(60, 200, 120)
+LOSE_COLOR = discord.Color.from_rgb(200, 70, 70)
+
 BLACKJACK_GAMES: dict[str, dict] = {}
 
 
@@ -90,7 +94,6 @@ def combine_cards(cards: list[str], hide_second: bool = False):
     rendered_cards = []
 
     for i, card in enumerate(cards):
-
         if hide_second and i == 1:
             rendered_cards.append(render_hidden_card())
         else:
@@ -109,7 +112,6 @@ def wrap_cards(cards: list[str], hide_second=False, per_row=3):
     rows = []
 
     for i in range(0, len(cards), per_row):
-
         chunk = cards[i:i + per_row]
 
         if hide_second and i == 0:
@@ -147,7 +149,6 @@ class GambleView(discord.ui.View):
 
     async def on_timeout(self):
 
-        # refund bet
         self.user["wallet"] += self.bet
         save_coins(self.coins)
 
@@ -167,9 +168,9 @@ class GambleView(discord.ui.View):
         result = random.choice(["red", "black"])
 
         if choice == result:
-
             winnings = self.bet * 2
             self.user["wallet"] += winnings
+            color = WIN_COLOR
 
             lines = [
                 "Result",
@@ -181,6 +182,7 @@ class GambleView(discord.ui.View):
             ]
 
         else:
+            color = LOSE_COLOR
 
             lines = [
                 "Result",
@@ -196,7 +198,7 @@ class GambleView(discord.ui.View):
         embed = discord.Embed(
             title="Gamble",
             description="```text\n" + "\n".join(lines) + "\n```",
-            color=EMBED_COLOR
+            color=color
         )
 
         for child in self.children:
@@ -298,7 +300,6 @@ class BlackjackView(discord.ui.View):
         player_total = hand_value(game["player"])
 
         if player_total > 21:
-
             coins = load_coins()
             user = ensure_user(coins, self.author_id)
 
@@ -306,7 +307,7 @@ class BlackjackView(discord.ui.View):
                 game,
                 result_text=f"**Bust.** You lost **{game['bet']}** coins."
             )
-
+            embed.color = LOSE_COLOR
             embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`")
 
             BLACKJACK_GAMES.pop(self.author_id)
@@ -336,18 +337,19 @@ class BlackjackView(discord.ui.View):
         bet = int(game["bet"])
 
         if dealer_val > 21 or player_val > dealer_val:
-
             winnings = bet * 2
             user["wallet"] += winnings
             result = f"**You won {winnings} coins.**"
+            color = WIN_COLOR
 
         elif dealer_val == player_val:
-
             user["wallet"] += bet
             result = f"**Push.** Your **{bet}** coins were returned."
+            color = EMBED_COLOR
 
         else:
             result = "**Dealer wins.**"
+            color = LOSE_COLOR
 
         save_coins(coins)
 
@@ -356,8 +358,12 @@ class BlackjackView(discord.ui.View):
             reveal_dealer=True,
             result_text=result
         )
-
-        embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`")
+        embed.color = color
+        embed.add_field(
+            name="¢ Wallet",
+            value=f"`{user['wallet']}`",
+            inline=False
+        )
 
         BLACKJACK_GAMES.pop(self.author_id)
 
@@ -398,7 +404,6 @@ class Games(commands.Cog):
         if amount.lower() == "all":
             bet = wallet
         else:
-
             if not amount.isdigit():
                 return await ctx.send(embed=make_embed("Gamble", "Enter a number or `all`."))
 
@@ -446,7 +451,6 @@ class Games(commands.Cog):
         if bet.lower() == "all":
             amount = wallet
         else:
-
             if not bet.isdigit():
                 return await ctx.send(embed=make_embed("Blackjack", "Enter a number or `all`."))
 
@@ -487,9 +491,11 @@ class Games(commands.Cog):
                 winnings = amount * 2
                 user["wallet"] += winnings
                 result_text = f"**Natural blackjack.** You won **{winnings}** coins."
+                color = WIN_COLOR
             else:
                 user["wallet"] += amount
                 result_text = f"**Push.** Both hands hit blackjack."
+                color = EMBED_COLOR
 
             save_coins(coins)
             BLACKJACK_GAMES.pop(uid)
@@ -498,6 +504,7 @@ class Games(commands.Cog):
 
             view = BlackjackView(author_id=ctx.author.id)
             embed = view.build_embed(temp, reveal_dealer=True, result_text=result_text)
+            embed.color = color
             embed.add_field(name="¢ Wallet", value=f"`{user['wallet']}`")
 
             return await ctx.send(embed=embed)
