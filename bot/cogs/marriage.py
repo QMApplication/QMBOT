@@ -6,7 +6,7 @@ from discord.ext import commands
 from storage import load_marriages, save_marriages
 
 
-EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+EMBED_COLOR = discord.Color.from_rgb(140, 50, 95)
 
 # target_id -> proposer_id
 MARRIAGE_PROPOSALS: dict[str, str] = {}
