@@ -165,40 +165,38 @@ class GambleView(discord.ui.View):
 
     async def _finish(self, interaction, choice):
 
-    result = random.choice(["red", "black"])
+        result = random.choice(["red", "black"])
 
-    if choice == result:
+        if choice == result:
+            winnings = self.bet * 2
+            self.user["wallet"] += winnings
 
-        winnings = self.bet * 2
-        self.user["wallet"] += winnings
+            embed = discord.Embed(
+                title="WINNER 🎉",
+                description=f"You won **{winnings} coins**!",
+                color=WIN_COLOR
+            )
 
-        embed = discord.Embed(
-            title="WINNER 🎉",
-            description=f"You won **{winnings} coins**!",
-            color=WIN_COLOR
+        else:
+            embed = discord.Embed(
+                title="LOSER 💀",
+                description=f"You lost **{self.bet} coins**.",
+                color=LOSE_COLOR
+            )
+
+        embed.add_field(
+            name="¢ Wallet",
+            value=f"`{self.user['wallet']}`",
+            inline=False
         )
 
-    else:
+        save_coins(self.coins)
 
-        embed = discord.Embed(
-            title="LOSER 💀",
-            description=f"You lost **{self.bet} coins**.",
-            color=LOSE_COLOR
-        )
+        for child in self.children:
+            child.disabled = True
 
-    embed.add_field(
-        name="¢ Wallet",
-        value=f"`{self.user['wallet']}`",
-        inline=False
-    )
-
-    save_coins(self.coins)
-
-    for child in self.children:
-        child.disabled = True
-
-    await interaction.response.edit_message(embed=embed, view=self)
-    self.stop()
+        await interaction.response.edit_message(embed=embed, view=self)
+        self.stop()
 
     @discord.ui.button(label="Red", style=discord.ButtonStyle.danger)
     async def red_button(self, interaction, button):
