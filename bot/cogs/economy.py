@@ -269,7 +269,161 @@ class Economy(commands.Cog):
 
         embed = make_embed("Balance Leaderboard", table)
         await ctx.send(embed=embed)
+    # -------------------------
+    # ROB
+    # -------------------------
 
+    @commands.hybrid_command(
+        name="rob",
+        description="Attempt to rob another user's wallet."
+    )
+    async def rob(self, ctx, member: discord.Member):
+
+        if member == ctx.author:
+            return await ctx.send(embed=make_embed("Rob", "You can't rob yourself."))
+
+        if member.bot:
+            return await ctx.send(embed=make_embed("Rob", "You can't rob bots."))
+
+        coins = load_coins()
+
+        robber = ensure_user(coins, ctx.author.id)
+        victim = ensure_user(coins, member.id)
+
+        now = time.time()
+
+        cooldown = 300
+
+        if now - robber["last_rob"] < cooldown:
+            remaining = int(cooldown - (now - robber["last_rob"]))
+            return await ctx.send(
+                embed=make_embed(
+                    "Robbery Cooldown",
+                    f"Try again in **{remaining}s**"
+                )
+            )
+
+        victim_wallet = int(victim.get("wallet", 0))
+
+        if victim_wallet <= 0:
+            return await ctx.send(
+                embed=make_embed("Robbery Failed", "They have nothing to steal.")
+            )
+
+        robber["last_rob"] = now
+
+        success = random.random() < 0.40
+
+        if success:
+
+            steal = random.randint(10, min(200, victim_wallet))
+
+            victim["wallet"] -= steal
+            robber["wallet"] += steal
+
+            save_coins(coins)
+
+            embed = make_embed(
+                "Robbery Success",
+                f"You stole **{steal}** coins from {member.mention}."
+            )
+
+        else:
+
+            fine = random.randint(20, 60)
+            robber["wallet"] = max(0, robber["wallet"] - fine)
+
+            save_coins(coins)
+
+            embed = make_embed(
+                "Robbery Failed",
+                f"You got caught and paid **{fine}** coins."
+            )
+
+        embed.add_field(name="¢ Wallet", value=f"`{robber['wallet']}`", inline=False)
+
+        await ctx.send(embed=embed)
+
+
+    # -------------------------
+    # BANK ROB
+    # -------------------------
+
+    @commands.hybrid_command(
+        name="bankrob",
+        description="Attempt to rob another user's QMBank."
+    )
+    async def bankrob(self, ctx, member: discord.Member):
+
+        if member == ctx.author:
+            return await ctx.send(embed=make_embed("Bank Rob", "You can't rob yourself."))
+
+        if member.bot:
+            return await ctx.send(embed=make_embed("Bank Rob", "You can't rob bots."))
+
+        coins = load_coins()
+
+        robber = ensure_user(coins, ctx.author.id)
+        victim = ensure_user(coins, member.id)
+
+        now = time.time()
+
+        cooldown = 600
+
+        if now - robber["last_bankrob"] < cooldown:
+            remaining = int(cooldown - (now - robber["last_bankrob"]))
+            return await ctx.send(
+                embed=make_embed(
+                    "Bank Rob Cooldown",
+                    f"Try again in **{remaining}s**"
+                )
+            )
+
+        victim_bank = int(victim.get("bank", 0))
+
+        if victim_bank <= 0:
+            return await ctx.send(
+                embed=make_embed("Bank Rob Failed", "They have nothing in QMBank.")
+            )
+
+        robber["last_bankrob"] = now
+
+        success = random.random() < 0.20
+
+        if success:
+
+            pct = random.uniform(BANKROB_STEAL_MIN_PCT, BANKROB_STEAL_MAX_PCT)
+            amount = int(victim_bank * pct)
+
+            amount = max(amount, BANKROB_MIN_STEAL)
+            amount = min(amount, int(victim_bank * BANKROB_MAX_STEAL_PCT_CAP))
+
+            victim["bank"] -= amount
+            robber["wallet"] += amount
+
+            save_coins(coins)
+
+            embed = make_embed(
+                "Bank Rob Success",
+                f"You stole **{amount}** coins from {member.mention}'s **QMBank**."
+            )
+
+        else:
+
+            fine = random.randint(50, 150)
+            robber["wallet"] = max(0, robber["wallet"] - fine)
+
+            save_coins(coins)
+
+            embed = make_embed(
+                "Bank Rob Failed",
+                f"The heist failed. You lost **{fine}** coins."
+            )
+
+        embed.add_field(name="¢ Wallet", value=f"`{robber['wallet']}`", inline=False)
+
+        await ctx.send(embed=embed)
+        
 
 async def setup(bot):
     await bot.add_cog(Economy(bot))
