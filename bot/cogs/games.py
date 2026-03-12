@@ -165,47 +165,40 @@ class GambleView(discord.ui.View):
 
     async def _finish(self, interaction, choice):
 
-        result = random.choice(["red", "black"])
+    result = random.choice(["red", "black"])
 
-        if choice == result:
-            winnings = self.bet * 2
-            self.user["wallet"] += winnings
-            color = WIN_COLOR
+    if choice == result:
 
-            lines = [
-                "Result",
-                "------",
-                f"Choice  | {choice.title()}",
-                f"Spin    | {result.title()}",
-                f"Win     | +{winnings}",
-                f"Wallet  | {self.user['wallet']}",
-            ]
-
-        else:
-            color = LOSE_COLOR
-
-            lines = [
-                "Result",
-                "------",
-                f"Choice  | {choice.title()}",
-                f"Spin    | {result.title()}",
-                f"Lose    | -{self.bet}",
-                f"Wallet  | {self.user['wallet']}",
-            ]
-
-        save_coins(self.coins)
+        winnings = self.bet * 2
+        self.user["wallet"] += winnings
 
         embed = discord.Embed(
-            title="Gamble",
-            description="```text\n" + "\n".join(lines) + "\n```",
-            color=color
+            title="WINNER 🎉",
+            description=f"You won **{winnings} coins**!",
+            color=WIN_COLOR
         )
 
-        for child in self.children:
-            child.disabled = True
+    else:
 
-        await interaction.response.edit_message(embed=embed, view=self)
-        self.stop()
+        embed = discord.Embed(
+            title="LOSER 💀",
+            description=f"You lost **{self.bet} coins**.",
+            color=LOSE_COLOR
+        )
+
+    embed.add_field(
+        name="¢ Wallet",
+        value=f"`{self.user['wallet']}`",
+        inline=False
+    )
+
+    save_coins(self.coins)
+
+    for child in self.children:
+        child.disabled = True
+
+    await interaction.response.edit_message(embed=embed, view=self)
+    self.stop()
 
     @discord.ui.button(label="Red", style=discord.ButtonStyle.danger)
     async def red_button(self, interaction, button):
