@@ -14,7 +14,7 @@ from storage import (
 from config import SHOP_ITEMS, ITEM_PRICES
 
 
-EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+EMBED_COLOR = discord.Color.from_rgb(68, 34, 102)
 
 SHOP_RESTOCK_MINUTES = 30
 
