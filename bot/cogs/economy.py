@@ -13,7 +13,7 @@ from config import (
     BANKROB_MAX_STEAL_PCT_CAP
 )
 
-EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+EMBED_COLOR = discord.Color.from_rgb(110, 40, 110)
 
 
 def make_embed(title: str, description: str) -> discord.Embed:
