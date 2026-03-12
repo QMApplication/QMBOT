@@ -2,17 +2,22 @@ import discord
 from discord.ext import commands
 import random
 
+from storage import load_actions, save_actions
 
-EMBED_COLOR = discord.Color.from_rgb(150, 120, 45)
+
+EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 
-def make_embed(title: str, description: str, footer: str):
+def make_embed(title: str, description: str, footer: str | None = None):
     embed = discord.Embed(
         title=title,
         description=description,
         color=EMBED_COLOR
     )
-    embed.set_footer(text=footer)
+
+    if footer:
+        embed.set_footer(text=footer)
+
     return embed
 
 
@@ -33,11 +38,7 @@ class Social(commands.Cog):
 
         if member.bot:
             return await ctx.send(
-                embed=discord.Embed(
-                    title="Insult",
-                    description="I won't insult bots.",
-                    color=EMBED_COLOR
-                )
+                embed=make_embed("Insult", "I won't insult bots.")
             )
 
         lines = [
@@ -60,11 +61,9 @@ class Social(commands.Cog):
 
         embed = make_embed(
             "Insult",
-            random.choice(lines),
+            f"{ctx.author.mention} → {member.mention}\n\n{random.choice(lines)}",
             f"{ctx.author.display_name} → {member.display_name}"
         )
-
-        embed.description = f"{ctx.author.mention} → {member.mention}\n\n{embed.description}"
 
         await ctx.send(embed=embed)
 
@@ -90,11 +89,9 @@ class Social(commands.Cog):
 
         embed = make_embed(
             "Threat",
-            random.choice(lines),
+            f"{ctx.author.mention} → {member.mention}\n\n{random.choice(lines)}",
             f"{ctx.author.display_name} → {member.display_name}"
         )
-
-        embed.description = f"{ctx.author.mention} → {member.mention}\n\n{embed.description}"
 
         await ctx.send(embed=embed)
 
@@ -120,11 +117,9 @@ class Social(commands.Cog):
 
         embed = make_embed(
             "Warning",
-            random.choice(lines),
+            f"{ctx.author.mention} → {member.mention}\n\n{random.choice(lines)}",
             f"{ctx.author.display_name} → {member.display_name}"
         )
-
-        embed.description = f"{ctx.author.mention} → {member.mention}\n\n{embed.description}"
 
         await ctx.send(embed=embed)
 
@@ -148,11 +143,9 @@ class Social(commands.Cog):
 
         embed = make_embed(
             "Compliment",
-            random.choice(lines),
+            f"{ctx.author.mention} → {member.mention}\n\n{random.choice(lines)}",
             f"{ctx.author.display_name} → {member.display_name}"
         )
-
-        embed.description = f"{ctx.author.mention} → {member.mention}\n\n{embed.description}"
 
         await ctx.send(embed=embed)
 
@@ -188,6 +181,132 @@ class Social(commands.Cog):
             "Action",
             f"{ctx.author.mention} licked {member.mention}.",
             f"{ctx.author.display_name} → {member.display_name}"
+        )
+
+        await ctx.send(embed=embed)
+
+    # -------------------------
+    # ACTION CREATE
+    # -------------------------
+
+    @commands.hybrid_command(
+        name="actioncreate",
+        description="Create a custom action."
+    )
+    @commands.has_permissions(manage_guild=True)
+    async def actioncreate(self, ctx, verb: str, plural: str):
+
+        actions = load_actions()
+        verb = verb.lower().strip()
+        plural = plural.strip()
+
+        if not verb.isalpha():
+            return await ctx.send(
+                embed=make_embed("Action Create", "Verb must only contain letters.")
+            )
+
+        if verb in actions:
+            return await ctx.send(
+                embed=make_embed("Action Create", "That action already exists.")
+            )
+
+        actions[verb] = plural
+        save_actions(actions)
+
+        embed = make_embed(
+            "Action Created",
+            (
+                f"Verb: `{verb}`\n"
+                f"Output: `{plural}`\n\n"
+                f"Use it with `/action {verb} @user`"
+            )
+        )
+
+        await ctx.send(embed=embed)
+
+    # -------------------------
+    # ACTION
+    # -------------------------
+
+    @commands.hybrid_command(
+        name="action",
+        description="Use a custom action."
+    )
+    async def action(self, ctx, verb: str, member: discord.Member):
+
+        actions = load_actions()
+        verb = verb.lower().strip()
+
+        if verb not in actions:
+            return await ctx.send(
+                embed=make_embed("Action", "That action does not exist.")
+            )
+
+        plural = actions[verb]
+
+        embed = make_embed(
+            "Action",
+            f"{ctx.author.mention} {plural} {member.mention}.",
+            f"{ctx.author.display_name} → {member.display_name}"
+        )
+
+        await ctx.send(embed=embed)
+
+    # -------------------------
+    # ACTION LIST
+    # -------------------------
+
+    @commands.hybrid_command(
+        name="actionlist",
+        description="Show all custom actions."
+    )
+    async def actionlist(self, ctx):
+
+        actions = load_actions()
+
+        if not actions:
+            return await ctx.send(
+                embed=make_embed("Action List", "No custom actions exist yet.")
+            )
+
+        verbs = sorted(actions.keys())
+
+        lines = []
+        for verb in verbs:
+            lines.append(f"`{verb}` → {actions[verb]}")
+
+        embed = make_embed(
+            "Custom Actions",
+            "\n".join(lines)
+        )
+
+        await ctx.send(embed=embed)
+
+    # -------------------------
+    # ACTION DELETE
+    # -------------------------
+
+    @commands.hybrid_command(
+        name="actiondelete",
+        description="Delete a custom action."
+    )
+    @commands.has_permissions(manage_guild=True)
+    async def actiondelete(self, ctx, verb: str):
+
+        actions = load_actions()
+        verb = verb.lower().strip()
+
+        if verb not in actions:
+            return await ctx.send(
+                embed=make_embed("Action Delete", "That action does not exist.")
+            )
+
+        removed = actions.pop(verb)
+        save_actions(actions)
+
+        embed = make_embed(
+            "Action Deleted",
+            f"Removed `{verb}` → {removed}"
         )
 
         await ctx.send(embed=embed)
