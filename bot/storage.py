@@ -33,7 +33,8 @@ BEG_STATS_FILE = DATA_PATH / "beg_stats.json"
 
 SWEAR_JAR_FILE = DATA_PATH / "swear_jar.json"
 STICKER_FILE = DATA_PATH / "sticker.json"
-ACTIONS_FILE = DATA_PATH / "data/actions.json"
+
+ACTIONS_FILE = DATA_PATH / "actions.json"
 
 # =========================
 # Core JSON helpers
@@ -47,7 +48,6 @@ def _load_json(path: Path, default: Any):
         with path.open("r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        # corrupted or invalid JSON
         return default
 
 
@@ -55,6 +55,7 @@ def _save_json(path: Path, obj: Any):
     """
     Atomic save so Railway crashes cannot corrupt files.
     """
+
     temp = path.with_suffix(".tmp")
 
     with temp.open("w", encoding="utf-8") as f:
@@ -202,6 +203,7 @@ def save_beg_stats(d):
 # =========================
 
 def load_swear_jar():
+
     jar = _load_json(SWEAR_JAR_FILE, {"total": 0, "users": {}})
 
     if not isinstance(jar, dict):
@@ -227,6 +229,7 @@ def save_swear_jar(d):
 # =========================
 
 def load_stickers():
+
     data = _load_json(STICKER_FILE, {"total": 0, "users": {}, "daily": {}})
 
     if not isinstance(data, dict):
@@ -249,21 +252,14 @@ def load_stickers():
 
 def save_stickers(d):
     _save_json(STICKER_FILE, d)
-    
+
+
 # =========================
-# Action
+# Actions
 # =========================
 
 def load_actions():
-    if not ACTIONS_FILE.exists():
-        return {}
+    return _load_json(ACTIONS_FILE, {})
 
-    with open(ACTIONS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_actions(data):
-    ACTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(ACTIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+def save_actions(d):
+    _save_json(ACTIONS_FILE, d)
