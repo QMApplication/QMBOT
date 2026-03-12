@@ -3,7 +3,7 @@ from discord.ext import commands
 import random
 
 
-EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+EMBED_COLOR = discord.Color.from_rgb(150, 120, 45)
 
 
 def make_embed(title: str, description: str, footer: str):
