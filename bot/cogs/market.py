@@ -9,7 +9,7 @@ from storage import load_coins, save_coins, load_stocks
 from config import STOCKS
 
 
-EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+EMBED_COLOR = discord.Color.from_rgb(28, 110, 110)
 
 
 def make_embed(title: str, description: str):
