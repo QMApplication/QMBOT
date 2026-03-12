@@ -11,7 +11,7 @@ from config import (
 )
 
 
-EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+EMBED_COLOR = discord.Color.from_rgb(32, 110, 60)
 
 
 def make_embed(title: str, description: str = "") -> discord.Embed:
