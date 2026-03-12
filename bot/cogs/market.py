@@ -57,15 +57,17 @@ class Stocks(commands.Cog):
         for name in STOCKS:
             price = int(stocks.get(name, {}).get("price", 0))
 
-            short_name = name[:16]
-            row = f"{short_name.ljust(16)} | {str(price).rjust(6)}"
+            row = (
+                f"{name[:16].ljust(16)} | "
+                f"{str(price).rjust(6)}"
+            )
 
             rows.append(row)
 
         table = (
             "```text\n"
-            "Stock            | Price\n"
-            "------------------------\n"
+            "Stock           |Price\n"
+            "----------------------\n"
             f"{chr(10).join(rows)}\n"
             "```"
         )
@@ -76,7 +78,7 @@ class Stocks(commands.Cog):
             color=EMBED_COLOR
         )
 
-        embed.set_footer(text="Live prices")
+        embed.set_footer(text="Live market prices")
 
         await ctx.send(embed=embed)
 
@@ -155,9 +157,9 @@ class Stocks(commands.Cog):
         ax.tick_params(axis="x", colors="#aeb6c2", labelsize=8)
         ax.tick_params(axis="y", colors="#aeb6c2", labelsize=8)
 
-        ax.set_title(f"{stock_name}  |  Price History", color="#e6edf3", fontsize=13, pad=10)
-        ax.set_xlabel("Updates", color="#aeb6c2", fontsize=9, labelpad=8)
-        ax.set_ylabel("Price", color="#aeb6c2", fontsize=9, labelpad=8)
+        ax.set_title(f"{stock_name} | Price History", color="#e6edf3", fontsize=13, pad=10)
+        ax.set_xlabel("Updates", color="#aeb6c2", fontsize=9)
+        ax.set_ylabel("Price", color="#aeb6c2", fontsize=9)
 
         ymin = float(y.min())
         ymax = float(y.max())
@@ -181,14 +183,17 @@ class Stocks(commands.Cog):
         file = discord.File(buf, filename="stock.png")
 
         sign = "+" if change > 0 else ""
+
         embed = discord.Embed(
             title=stock_name,
-            description="Market View & Volatility",
+            description="Market View",
             color=EMBED_COLOR
         )
+
         embed.add_field(name="Price", value=f"`{price}`", inline=True)
         embed.add_field(name="Change", value=f"`{sign}{change}`", inline=True)
-        embed.add_field(name="History", value=f"`{len(history)} points`", inline=True)
+        embed.add_field(name="History", value=f"`{len(history)}`", inline=True)
+
         embed.set_image(url="attachment://stock.png")
         embed.set_footer(text="Stored market history")
 
@@ -212,25 +217,44 @@ class Stocks(commands.Cog):
         pf = user.get("portfolio", {})
         stocks = load_stocks()
 
-        lines = []
+        rows = []
         total = 0
 
         for s in STOCKS:
+
             qty = int(pf.get(s, 0))
+
             if qty > 0:
+
                 price = int(stocks.get(s, {}).get("price", 0))
                 value = qty * price
                 total += value
-                lines.append(f"• **{s}**  {qty} shares  |  `{value}`")
 
-        if not lines:
-            lines = ["No stocks."]
+                row = (
+                    f"{s[:16].ljust(16)} | "
+                    f"{str(qty).rjust(3)} | "
+                    f"{str(value).rjust(6)}"
+                )
+
+                rows.append(row)
+
+        if not rows:
+            rows = ["No stocks."]
+
+        table = (
+            "```text\n"
+            "Stock           |Qty |Value\n"
+            "---------------------------\n"
+            f"{chr(10).join(rows)}\n"
+            "```"
+        )
 
         embed = discord.Embed(
             title=f"{member.display_name} — Portfolio",
-            description="\n".join(lines),
+            description=table,
             color=EMBED_COLOR
         )
+
         embed.add_field(name="Total Value", value=f"`{total}`", inline=False)
 
         await ctx.send(embed=embed)
@@ -282,6 +306,7 @@ class Stocks(commands.Cog):
             description=f"Bought **{amount}** shares of **{stock_name}**.",
             color=EMBED_COLOR
         )
+
         embed.add_field(name="Cost", value=f"`{cost}`", inline=True)
         embed.add_field(name="Price", value=f"`{price}` each", inline=True)
 
@@ -335,6 +360,7 @@ class Stocks(commands.Cog):
             description=f"Sold **{amount}** shares of **{stock_name}**.",
             color=EMBED_COLOR
         )
+
         embed.add_field(name="Revenue", value=f"`{revenue}`", inline=True)
         embed.add_field(name="Price", value=f"`{price}` each", inline=True)
 
