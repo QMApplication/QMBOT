@@ -28,6 +28,11 @@ from storage import (
 EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
 
 # =========================
+# Stars
+# =========================
+STAR_REACTION_EMOJIS = {"⭐", "🌟", "✨", "💫"}
+
+# =========================
 # AFK
 # =========================
 AFK_STATUS = {}  # key = f"{guild_id}-{user_id}" -> reason
@@ -355,6 +360,71 @@ class Listeners(commands.Cog):
     # -------------------------
     # Main message listener
     # -------------------------
+    # -------------------------
+    # Star reactions
+    # -------------------------
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
+        if user.bot:
+            return
+
+        if str(reaction.emoji) not in STAR_REACTION_EMOJIS:
+            return
+
+        message = reaction.message
+
+        if not message.guild:
+            return
+
+        if message.author.bot:
+            return
+
+        if message.author.id == user.id:
+            return
+
+        coins = load_coins()
+
+        giver = ensure_user_coins(user.id)[str(user.id)]
+        coins = load_coins()
+        receiver = ensure_user_coins(message.author.id)[str(message.author.id)]
+        coins = load_coins()
+
+        giver = coins[str(user.id)]
+        receiver = coins[str(message.author.id)]
+
+        giver.setdefault("star_meta", {"day": _today_key(), "given": {}})
+        giver["star_meta"].setdefault("day", _today_key())
+        giver["star_meta"].setdefault("given", {})
+
+        if giver["star_meta"]["day"] != _today_key():
+            giver["star_meta"] = {
+                "day": _today_key(),
+                "given": {}
+            }
+
+        target_key = str(message.author.id)
+        given_today = int(giver["star_meta"]["given"].get(target_key, 0))
+
+        if given_today >= 2:
+            return
+
+        giver["star_meta"]["given"][target_key] = given_today + 1
+        receiver["stars"] = int(receiver.get("stars", 0)) + 1
+
+        save_coins(coins)
+
+        try:
+            await message.channel.send(
+                embed=make_embed(
+                    "Golden Star",
+                    f"{message.author.mention} got a **golden star** from {user.mention}.\n"
+                    f"✦ Stars: **{receiver['stars']}**"
+                ),
+                delete_after=3
+            )
+        except Exception:
+            pass
+            
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         if message.author.bot:
