@@ -313,6 +313,68 @@ class Stocks(commands.Cog):
         await ctx.send(embed=embed)
 
     # -------------------------
+    # RESET MARKET
+    # -------------------------
+
+    @commands.hybrid_command(
+        name="resetmarket",
+        description="Reset all stock prices to their starting values."
+    )
+    @discord.app_commands.default_permissions(manage_guild=True)
+    @commands.has_permissions(manage_guild=True)
+    @commands.guild_only()
+    async def resetmarket(self, ctx: commands.Context):
+
+        stocks = load_stocks()
+
+        reset_count = 0
+
+        for name in STOCKS:
+
+            start_price = STOCKS[name]
+
+            stocks[name] = {
+                "price": start_price,
+                "history": [start_price]
+            }
+
+            reset_count += 1
+
+        from storage import save_stocks
+        save_stocks(stocks)
+
+        embed = discord.Embed(
+            title="Market Reset",
+            description="All stock prices have been reset.",
+            color=EMBED_COLOR
+        )
+
+        embed.add_field(name="Stocks Reset", value=f"`{reset_count}`", inline=True)
+        embed.set_footer(text=f"Reset by {ctx.author}")
+
+        await ctx.send(embed=embed)
+
+    @resetmarket.error
+    async def resetmarket_error(self, ctx: commands.Context, error):
+
+        if isinstance(error, commands.MissingPermissions):
+            return await ctx.send(
+                embed=make_embed(
+                    "Access Denied",
+                    "You need **Manage Server** permission to use this command."
+                )
+            )
+
+        if isinstance(error, commands.NoPrivateMessage):
+            return await ctx.send(
+                embed=make_embed(
+                    "Error",
+                    "This command can only be used in a server."
+                )
+            )
+
+        raise error
+    # -------------------------
     # SELL STOCK
     # -------------------------
 
