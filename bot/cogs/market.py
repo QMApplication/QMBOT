@@ -372,38 +372,25 @@ class Stocks(commands.Cog):
 
     @commands.hybrid_command(
         name="resetmarket",
-        description="Reset all stock prices."
+        description="Reset all stock prices to 100."
     )
     @discord.app_commands.default_permissions(manage_guild=True)
     @commands.has_permissions(manage_guild=True)
     async def resetmarket(self, ctx: commands.Context):
 
         stocks = load_stocks()
-        reset_count = 0
 
         for name in STOCKS:
-
-            data = stocks.get(name, {})
-            history = data.get("history", [])
-
-            start_price = history[0] if history else data.get("price", 100)
-
-            stocks[name] = {
-                "price": start_price,
-                "history": [start_price]
-            }
-
-            reset_count += 1
+            stocks[name]["price"] = 100
 
         save_stocks(stocks)
 
         embed = discord.Embed(
             title="Market Reset",
-            description="All stock prices have been reset.",
+            description="All stock prices have been reset to **100 coins**.",
             color=EMBED_COLOR
         )
 
-        embed.add_field(name="Stocks Reset", value=f"`{reset_count}`", inline=True)
         embed.set_footer(text=f"Reset by {ctx.author}")
 
         await ctx.send(embed=embed)
