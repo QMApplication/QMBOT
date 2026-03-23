@@ -25,6 +25,10 @@ INITIAL_EXTENSIONS = [
     "cogs.market",
     "cogs.swearjar",
     "cogs.logs",
+    "cogs.fun",
+    "cogs.xp",
+    "cogs.extras",
+    "cogs.modtools",
 ]
 
 
