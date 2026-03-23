@@ -5,7 +5,8 @@ from config import COVER_BOT_ID, COVER_INVITE_URL, RESTRICT_GUILD_NAME
 from utils import get_member_safe
 
 
-EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+from ui_utils import C, E
+EMBED_COLOR = C.ADMIN
 
 
 def _restricted_here(ctx: commands.Context) -> bool:
@@ -36,14 +37,14 @@ class CoverBot(commands.Cog):
 
         if member:
             embed = discord.Embed(
-                title="Cover Bot",
+                title="🤖  Cover Bot",
                 description="The Cover bot is already in this server.",
                 color=EMBED_COLOR
             )
         else:
             embed = discord.Embed(
-                title="Cover Bot",
-                description="The Cover bot is not in this server.",
+                title="🤖  Cover Bot",
+                description="The Cover bot is not in this server. Use `/coverjoin` to invite it.",
                 color=EMBED_COLOR
             )
 
@@ -69,11 +70,11 @@ class CoverBot(commands.Cog):
 
         view = discord.ui.View()
         view.add_item(
-            discord.ui.Button(label="Invite Cover Bot", url=COVER_INVITE_URL)
+            discord.ui.Button(label="🔗  Invite Cover Bot", url=COVER_INVITE_URL)
         )
 
         embed = discord.Embed(
-            title="Invite Cover Bot",
+            title="🔗  Invite Cover Bot",
             description=(
                 "Use the button below to open the Discord OAuth2 page.\n"
                 "You must be logged in and have permission to manage this server."
@@ -86,11 +87,11 @@ class CoverBot(commands.Cog):
         try:
             dm_view = discord.ui.View()
             dm_view.add_item(
-                discord.ui.Button(label="Invite Cover Bot", url=COVER_INVITE_URL)
+                discord.ui.Button(label="🔗  Invite Cover Bot", url=COVER_INVITE_URL)
             )
 
             dm_embed = discord.Embed(
-                title="Invite Cover Bot",
+                title="🔗  Invite Cover Bot",
                 description="Here is the invite link for the Cover bot.",
                 color=EMBED_COLOR
             )
@@ -115,13 +116,13 @@ class CoverBot(commands.Cog):
 
         member = await get_member_safe(ctx.guild, COVER_BOT_ID)
         if not member:
-            return await ctx.send("The Cover bot is not in this server.")
+            return await ctx.send("The Cover bot is not in this server. Use `/coverjoin` to invite it.")
 
         try:
             await member.kick(reason=f"Requested by {ctx.author} via coverleave")
 
             embed = discord.Embed(
-                title="Cover Bot",
+                title="🤖  Cover Bot",
                 description="The Cover bot has been removed from this server.",
                 color=EMBED_COLOR
             )
