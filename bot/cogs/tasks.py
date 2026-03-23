@@ -26,15 +26,12 @@ from config import (
 from storage import load_coins, save_coins, load_stocks, save_stocks
 
 
-EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
+from ui_utils import C, E
+EMBED_COLOR = C.ECONOMY
 
 
 def make_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(
-        title=title,
-        description=description,
-        color=EMBED_COLOR
-    )
+    return discord.Embed(title=title, description=description, color=EMBED_COLOR)
 
 
 # =========================================================
@@ -242,7 +239,7 @@ async def dm_package_to_user(
             try:
                 await user.send(
                     embed=make_embed(
-                        "Backup",
+                        "📦  Backup",
                         f"⚠️ Backup attempt ({reason}) — no files found to package."
                     )
                 )
