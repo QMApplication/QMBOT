@@ -17,7 +17,8 @@ from storage import (
     save_stocks,
 )
 
-EMBED_COLOR = discord.Color.from_rgb(68, 34, 102)
+from ui_utils import C, E, embed as _embed, error, success, warn
+EMBED_COLOR = C.SHOP
 SHOP_RESTOCK_MINUTES = 30
 
 # =========================
@@ -30,7 +31,7 @@ COIN_SHOP_ITEMS = {
         "max_stock": 9,
         "description": (
             "Spins a wheel of cash rewards.\n"
-            "Possible results: 1, 5, 10, 20, 50, 100, 200, 250, 1000, 1500, 2000, Jackpot (5000)."
+            "Possible results: 1, 5, 10, 20, 50, 100, 200, 250, 1000, 1500, 2000, Jackpot (10000)."
         ),
     },
     "Kachow clock": {
@@ -78,7 +79,7 @@ BANK_NOTE_WHEEL = [1, 5, 10, 20, 50, 100, 200, 250, 1000, 1500, 2000, "JACKPOT"]
 # =========================
 
 def make_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(title=title, description=description, color=EMBED_COLOR)
+    return _embed(title, description, EMBED_COLOR)
 
 
 def ensure_user(coins: dict, user_id: int | str) -> dict:
@@ -254,7 +255,7 @@ def _bank_note_reward() -> int:
         "JACKPOT",
     ]
     choice = random.choice(weighted)
-    return 5000 if choice == "JACKPOT" else int(choice)
+    return 10000 if choice == "JACKPOT" else int(choice)
 
 
 def _spinner_text(values: list) -> str:
@@ -321,7 +322,7 @@ class ConfirmClaimView(discord.ui.View):
         for child in self.children:
             child.disabled = True
 
-    @discord.ui.button(label="Yes", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="✅  Confirm", style=discord.ButtonStyle.success)
     async def yes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         for child in self.children:
             child.disabled = True
@@ -330,13 +331,13 @@ class ConfirmClaimView(discord.ui.View):
         await self.on_confirm(interaction)
         self.stop()
 
-    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="❌  Cancel", style=discord.ButtonStyle.secondary)
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         for child in self.children:
             child.disabled = True
 
         await interaction.response.edit_message(
-            embed=make_embed("Claim Cancelled", "Nothing was claimed."),
+            embed=_embed("❌  Cancelled", "Nothing was claimed.", C.LOSE),
             view=self
         )
         self.stop()
@@ -375,11 +376,11 @@ class Shop(commands.Cog):
         )
 
         embed = discord.Embed(
-            title="Shop",
+            title="🛍️  Coin Shop",
             description=table,
             color=EMBED_COLOR
         )
-        embed.set_footer(text="Coin shop • restocks every 30 minutes")
+        embed.set_footer(text="🛍️  Coin Shop  ·  Restocks every 30 minutes")
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(
@@ -395,11 +396,11 @@ class Shop(commands.Cog):
         )
 
         embed = discord.Embed(
-            title="Star Shop",
+            title="⭐  Star Shop",
             description=table,
             color=EMBED_COLOR
         )
-        embed.set_footer(text="Star shop • prices are in ✦ stars • restocks every 30 minutes")
+        embed.set_footer(text="⭐  Star Shop  ·  Prices in ✦ stars  ·  Restocks every 30 minutes")
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(
@@ -438,7 +439,7 @@ class Shop(commands.Cog):
         save_shop_stock(stock)
 
         embed = discord.Embed(
-            title="Purchase Complete",
+            title="✅  Purchase Complete",
             description=f"Bought **{item}**",
             color=EMBED_COLOR
         )
@@ -484,7 +485,7 @@ class Shop(commands.Cog):
         save_shop_stock(stock)
 
         embed = discord.Embed(
-            title="Purchase Complete",
+            title="✅  Purchase Complete",
             description=f"Bought **{item}**",
             color=EMBED_COLOR
         )
@@ -510,11 +511,11 @@ class Shop(commands.Cog):
         table = _format_inventory_table(user_inv)
 
         embed = discord.Embed(
-            title=f"{member.display_name} — Inventory",
+            title=f"📦  {member.display_name}'s Inventory",
             description=table,
             color=EMBED_COLOR
         )
-        embed.set_footer(text="Stored items")
+        embed.set_footer(text="Use /claim <item> to use an item")
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(
