@@ -122,21 +122,25 @@ class Economy(commands.Cog):
         debt   = accrue_debt_interest(user)
         save_coins(coins)
 
-        is_you = member == ctx.author
-        desc = (
-            f"{E.WALLET} **Wallet** › `{user['wallet']:,}` coins\n"
-            f"{E.BANK} **QMBank** › `{user['bank']:,}` coins\n"
-            f"{E.STAR} **Stars** › `{user['stars']:,}`"
-        )
-        if debt > 0:
-            desc += f"\n{E.DEBT} **Debt** › `{debt:,}` coins *(3 % / hr)*"
-
         total = user['wallet'] + user['bank']
+        # Build a clean code-block table
+        rows = [
+            ("Wallet",  f"{user['wallet']:,}"),
+            ("QMBank",  f"{user['bank']:,}"),
+            ("Stars",   f"{user['stars']:,}"),
+            ("Total",   f"{total:,}"),
+        ]
+        if debt > 0:
+            rows.append(("Debt", f"{debt:,}  (3%/hr)"))
+
+        col_w = max(len(r[0]) for r in rows)
+        table = "\n".join(f"{r[0].ljust(col_w)}  {r[1]}" for r in rows)
+
         e = embed(
-            f"{E.CROWN}  {member.display_name}'s Balance",
-            desc,
+            f"{E.CROWN}  {member.display_name}",
+            f"```\n{table}\n```",
             color=C.ECONOMY,
-            footer=f"Total wealth: {total:,} coins",
+            footer=f"{'Your' if member == ctx.author else member.display_name + chr(39) + 's'} account summary",
         )
         e.set_thumbnail(url=member.display_avatar.url)
         await ctx.send(embed=e)
@@ -427,18 +431,30 @@ class Economy(commands.Cog):
         coins = load_coins()
         board = sorted(coins.items(), key=lambda x: x[1].get("wallet", 0) + x[1].get("bank", 0), reverse=True)[:10]
         medals = ["🥇", "🥈", "🥉"]
-        lines  = []
+        # Build aligned code-block table
+        rows_data = []
         for i, (uid, data) in enumerate(board):
             total  = data.get("wallet", 0) + data.get("bank", 0)
             member = ctx.guild.get_member(int(uid)) if ctx.guild else None
-            name   = member.display_name if member else f"User {uid}"
-            you    = "  ← you" if int(uid) == ctx.author.id else ""
-            medal  = medals[i] if i < 3 else f"{i+1}."
-            lines.append(
-                f"{medal}  **{name}**{you}\n"
-                f"     {E.WALLET} `{data.get('wallet',0):,}`  {E.BANK} `{data.get('bank',0):,}`  · Total `{total:,}`"
-            )
-        e = embed(f"{E.TROPHY}  Balance Leaderboard", "\n".join(lines) or "No data.", C.ECONOMY)
+            name   = (member.display_name if member else f"User {uid}")[:16]
+            you    = " *" if int(uid) == ctx.author.id else ""
+            rank   = medals[i] if i < 3 else f" {i+1}."
+            rows_data.append((rank, name + you, data.get("wallet", 0), data.get("bank", 0), total))
+
+        if rows_data:
+            name_w = max(len(r[1]) for r in rows_data)
+            header = f"{'':3}  {'Name'.ljust(name_w)}  {'Wallet':>8}  {'Bank':>8}  {'Total':>8}"
+            sep    = "─" * len(header)
+            lines  = [header, sep]
+            for rank, name, wallet, bank, total in rows_data:
+                lines.append(f"{rank}  {name.ljust(name_w)}  {wallet:>8,}  {bank:>8,}  {total:>8,}")
+            lines.append(sep)
+            lines.append(f"{'':3}  {'* = you'.ljust(name_w)}")
+            table = "\n".join(lines)
+        else:
+            table = "No data yet."
+
+        e = embed(f"{E.TROPHY}  Balance Leaderboard", f"```\n{table}\n```", C.ECONOMY)
         await ctx.send(embed=e)
 
     # ── ROB ───────────────────────────────────────────────────────────────────
