@@ -78,20 +78,20 @@ class Minecraft(commands.Cog):
 
         embed = make_embed(MC_NAME, "\n".join(desc_lines))
 
-        embed.add_field(name="⚙️ Version", value=f"`{MC_VERSION}`", inline=True)
-        embed.add_field(name="🧩 Loader", value=f"`{MC_LOADER}`", inline=True)
-        embed.add_field(name="📦 Modpack", value=f"`{MC_MODPACK_NAME}`", inline=True)
+        embed.add_field(name="Version", value=f"`{MC_VERSION}`", inline=True)
+        embed.add_field(name="Loader", value=f"`{MC_LOADER}`", inline=True)
+        embed.add_field(name="Modpack", value=f"`{MC_MODPACK_NAME}`", inline=True)
 
         embed.add_field(
-            name="🔓 Access",
+            name="Access",
             value="Whitelist ON" if MC_WHITELISTED else "Public",
             inline=True
         )
-        embed.add_field(name="🌍 Region", value=MC_REGION, inline=True)
+        embed.add_field(name="Region", value=MC_REGION, inline=True)
 
         if MC_NOTES:
             embed.add_field(
-                name="📋 Notes",
+                name="Notes",
                 value="\n".join(f"• {x}" for x in MC_NOTES)[:1024],
                 inline=False
             )
@@ -108,7 +108,7 @@ class Minecraft(commands.Cog):
 
         if link_lines:
             embed.add_field(
-                name="🔗 Links",
+                name="Links",
                 value="\n".join(link_lines)[:1024],
                 inline=False
             )
@@ -138,20 +138,20 @@ class Minecraft(commands.Cog):
 
             if online is not None and maxp is not None:
                 embed.add_field(
-                    name="🟢 Status",
+                    name="Status",
                     value=f"Online  |  **{online}/{maxp}** players",
                     inline=False
                 )
             else:
                 embed.add_field(
-                    name="🟢 Status",
+                    name="Status",
                     value="Online",
                     inline=False
                 )
 
             if motd_plain:
                 embed.add_field(
-                    name="💬 MOTD",
+                    name="MOTD",
                     value=motd_plain[:1000],
                     inline=False
                 )
@@ -159,7 +159,7 @@ class Minecraft(commands.Cog):
             latency_ms = getattr(status, "latency", None)
             if latency_ms is not None:
                 embed.add_field(
-                    name="📡 Ping",
+                    name="Ping",
                     value=f"`{latency_ms:.0f} ms`",
                     inline=True
                 )
@@ -177,7 +177,7 @@ class Minecraft(commands.Cog):
 
                 if not data.get("online"):
                     embed.add_field(
-                        name="🟢 Status",
+                        name="Status",
                         value="Offline",
                         inline=False
                     )
@@ -187,7 +187,7 @@ class Minecraft(commands.Cog):
                     maxp = players.get("max", "?")
 
                     embed.add_field(
-                        name="🟢 Status",
+                        name="Status",
                         value=f"Online  |  **{online}/{maxp}** players",
                         inline=False
                     )
@@ -196,14 +196,14 @@ class Minecraft(commands.Cog):
                     clean = motd.get("clean")
                     if isinstance(clean, list) and clean:
                         embed.add_field(
-                            name="💬 MOTD",
+                            name="MOTD",
                             value="\n".join(clean)[:1000],
                             inline=False
                         )
 
             except Exception:
                 embed.add_field(
-                    name="🟢 Status",
+                    name="Status",
                     value="Unavailable right now.",
                     inline=False
                 )
