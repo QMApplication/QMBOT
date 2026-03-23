@@ -2,138 +2,65 @@ import discord
 from discord.ext import commands
 
 from storage import load_swear_jar, save_swear_jar
-
-
-EMBED_COLOR = discord.Color.from_rgb(34, 40, 49)
-
-
-def make_embed(title: str, description: str):
-    return discord.Embed(
-        title=title,
-        description=description,
-        color=EMBED_COLOR
-    )
+from ui_utils import C, E, embed, error, success
 
 
 class SwearJar(commands.Cog):
 
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
 
-    # -------------------------
-    # SWEAR JAR TOTAL
-    # -------------------------
-
-    @commands.hybrid_command(
-        name="swearjar",
-        description="Show the total number of swears recorded in the server."
-    )
-    async def swearjar(self, ctx: commands.Context):
-
-        jar = load_swear_jar()
+    @commands.hybrid_command(name="swearjar", description="Show the total swears recorded in the server.")
+    async def swearjar(self, ctx):
+        jar   = load_swear_jar()
         total = jar.get("total", 0)
-
-        embed = make_embed(
-            "🫙 Swear Jar",
-            f"Total swears recorded: **{total}**"
+        e = embed(
+            "🫙  Swear Jar",
+            f"This server has collectively sworn **{total:,}** times.\n\nEvery drop counts.",
+            C.SWEAR,
+            footer="Logged automatically from messages",
         )
+        await ctx.send(embed=e)
 
-        await ctx.send(embed=embed)
-
-    # -------------------------
-    # SWEAR LEADERBOARD
-    # -------------------------
-
-    @commands.hybrid_command(
-        name="swearleaderboard",
-        description="Show the users who swear the most."
-    )
-    async def swearleaderboard(self, ctx: commands.Context):
-
-        jar = load_swear_jar()
+    @commands.hybrid_command(name="swearleaderboard", description="Who swears the most?")
+    async def swearleaderboard(self, ctx):
+        jar   = load_swear_jar()
         users = jar.get("users", {})
-
         if not users:
-            return await ctx.send(
-                embed=make_embed(
-                    "Swear Leaderboard",
-                    "No swears recorded yet."
-                )
-            )
-
-        sorted_users = sorted(
-            users.items(),
-            key=lambda x: x[1].get("count", 0),
-            reverse=True
-        )
-
-        lines = []
-
-        for i, (uid, data) in enumerate(sorted_users[:10], start=1):
-
+            return await ctx.send(embed=embed("🧼  Swear Leaderboard", "No swears recorded yet. Impressive.", C.SWEAR))
+        sorted_users = sorted(users.items(), key=lambda x: x[1].get("count", 0), reverse=True)[:10]
+        medals = ["🥇", "🥈", "🥉"]
+        lines  = []
+        for i, (uid, data) in enumerate(sorted_users):
             try:
                 user = await self.bot.fetch_user(int(uid))
-                name = user.name
+                name = user.display_name
             except Exception:
                 name = f"User {uid}"
-
             count = data.get("count", 0)
+            medal = medals[i] if i < 3 else f"{i+1}."
+            lines.append(f"{medal}  **{name}** — `{count:,}` swears")
+        e = embed("🧼  Swear Leaderboard", "\n".join(lines), C.SWEAR, footer="Measured by raw swear count")
+        await ctx.send(embed=e)
 
-            lines.append(f"**{i}. {name}** — `{count}`")
-
-        embed = make_embed(
-            "🧼 Swear Leaderboard",
-            "\n".join(lines)
-        )
-
-        await ctx.send(embed=embed)
-
-    # -------------------------
-    # SWEAR RESET
-    # -------------------------
-
-    @commands.hybrid_command(
-        name="swearreset",
-        description="Reset the swear jar (admin only)."
-    )
+    @commands.hybrid_command(name="swearreset", description="Reset the swear jar (admin only).")
     @commands.has_permissions(administrator=True)
-    async def swearreset(self, ctx: commands.Context):
+    async def swearreset(self, ctx):
+        save_swear_jar({"total": 0, "users": {}})
+        await ctx.send(embed=success("Swear Jar Reset", "🧹 The jar has been emptied. Fresh start."))
 
-        save_swear_jar({
-            "total": 0,
-            "users": {}
-        })
-
-        await ctx.send(
-            embed=make_embed(
-                "Swear Jar Reset",
-                "🧹 The swear jar has been reset."
-            )
+    @commands.hybrid_command(name="swearfine", description="Check how many times you've sworn.")
+    async def swearfine(self, ctx):
+        jar   = load_swear_jar()
+        uid   = str(ctx.author.id)
+        count = jar.get("users", {}).get(uid, {}).get("count", 0)
+        e = embed(
+            "💰  Your Swear Count",
+            f"You have sworn **{count:,}** times, you filthy thing.",
+            C.SWEAR,
         )
-
-    # -------------------------
-    # SWEAR FINE
-    # -------------------------
-
-    @commands.hybrid_command(
-        name="swearfine",
-        description="Check how many times you have sworn."
-    )
-    async def swearfine(self, ctx: commands.Context):
-
-        jar = load_swear_jar()
-        users = jar.get("users", {})
-
-        uid = str(ctx.author.id)
-        count = users.get(uid, {}).get("count", 0)
-
-        embed = make_embed(
-            "💰 Your Swear Count",
-            f"You have sworn **{count}** times."
-        )
-
-        await ctx.send(embed=embed)
+        await ctx.send(embed=e)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot):
     await bot.add_cog(SwearJar(bot))
