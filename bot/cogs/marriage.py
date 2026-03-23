@@ -1,199 +1,116 @@
 import random
-
 import discord
 from discord.ext import commands
 
 from storage import load_marriages, save_marriages
+from ui_utils import C, E, embed, error, warn, success
 
-
-EMBED_COLOR = discord.Color.from_rgb(140, 50, 95)
-
-# target_id -> proposer_id
 MARRIAGE_PROPOSALS: dict[str, str] = {}
 
 
-def make_embed(title: str, description: str) -> discord.Embed:
-    return discord.Embed(
-        title=title,
-        description=description,
-        color=EMBED_COLOR
-    )
-
-
 class Marriage(commands.Cog):
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(
-        name="marry",
-        description="Propose to someone."
-    )
-    async def marry(self, ctx: commands.Context, member: discord.Member):
+    @commands.hybrid_command(name="marry", description="Propose to someone.")
+    async def marry(self, ctx, member: discord.Member):
         if member == ctx.author:
-            return await ctx.send(
-                embed=make_embed("Marriage", "❌ You can't marry yourself!")
-            )
-
+            return await ctx.send(embed=error("Marriage", "You can't propose to yourself."))
         if member.bot:
-            return await ctx.send(
-                embed=make_embed("Marriage", "🤖 You can't marry a bot.")
-            )
-
+            return await ctx.send(embed=error("Marriage", "Bots don't believe in marriage."))
         marriages = load_marriages()
-        author_id = str(ctx.author.id)
-        target_id = str(member.id)
-
-        if marriages.get(author_id) or marriages.get(target_id):
-            return await ctx.send(
-                embed=make_embed("Marriage", "💔 One of you is already married.")
-            )
-
-        if target_id in MARRIAGE_PROPOSALS:
-            return await ctx.send(
-                embed=make_embed(
-                    "Marriage",
-                    "⏳ That person already has a pending proposal. Please wait."
-                )
-            )
-
-        MARRIAGE_PROPOSALS[target_id] = author_id
-
-        await ctx.send(
-            embed=make_embed(
-                "Proposal Sent",
-                f"💍 {ctx.author.mention} has proposed to {member.mention}!\n"
-                f"{member.mention}, type `/accept` or `!accept` to say yes!"
-            )
+        aid, tid  = str(ctx.author.id), str(member.id)
+        if marriages.get(aid) or marriages.get(tid):
+            return await ctx.send(embed=warn("Marriage", "One of you is already married. 💔"))
+        if tid in MARRIAGE_PROPOSALS:
+            return await ctx.send(embed=warn("Marriage", "That person already has a pending proposal. Wait your turn."))
+        MARRIAGE_PROPOSALS[tid] = aid
+        e = embed(
+            "💍  Proposal Sent!",
+            f"{ctx.author.mention} has proposed to {member.mention}!\n\n"
+            f"{member.mention}, use `/accept` to say **yes!** 💕",
+            C.MARRIAGE,
         )
+        await ctx.send(embed=e)
 
-    @commands.hybrid_command(
-        name="accept",
-        description="Accept a marriage proposal."
-    )
-    async def accept(self, ctx: commands.Context):
-        user_id = str(ctx.author.id)
-        proposer_id = MARRIAGE_PROPOSALS.get(user_id)
-
+    @commands.hybrid_command(name="accept", description="Accept a marriage proposal.")
+    async def accept(self, ctx):
+        uid         = str(ctx.author.id)
+        proposer_id = MARRIAGE_PROPOSALS.get(uid)
         if not proposer_id:
-            return await ctx.send(
-                embed=make_embed("Marriage", "❌ You don't have any pending proposals.")
-            )
-
+            return await ctx.send(embed=warn("Marriage", "You have no pending proposals."))
         marriages = load_marriages()
-
-        if marriages.get(proposer_id) or marriages.get(user_id):
-            MARRIAGE_PROPOSALS.pop(user_id, None)
-            return await ctx.send(
-                embed=make_embed("Marriage", "💔 One of you is already married.")
-            )
-
-        marriages[proposer_id] = user_id
-        marriages[user_id] = proposer_id
+        if marriages.get(proposer_id) or marriages.get(uid):
+            MARRIAGE_PROPOSALS.pop(uid, None)
+            return await ctx.send(embed=warn("Marriage", "One of you is already married."))
+        marriages[proposer_id] = uid
+        marriages[uid]         = proposer_id
         save_marriages(marriages)
-
+        MARRIAGE_PROPOSALS.pop(uid, None)
         try:
             proposer = await self.bot.fetch_user(int(proposer_id))
-            proposer_mention = proposer.mention
+            p_mention = proposer.mention
         except Exception:
-            proposer_mention = f"<@{proposer_id}>"
+            p_mention = f"<@{proposer_id}>"
+        e = success("Married! 💞", f"{ctx.author.mention} and {p_mention} are now **married**! 🎊")
+        e.color = C.MARRIAGE
+        await ctx.send(embed=e)
 
-        MARRIAGE_PROPOSALS.pop(user_id, None)
-
-        await ctx.send(
-            embed=make_embed(
-                "Marriage Confirmed",
-                f"💞 {ctx.author.mention} and {proposer_mention} are now married! 🎉"
-            )
-        )
-
-    @commands.hybrid_command(
-        name="divorce",
-        description="Divorce your current partner."
-    )
-    async def divorce(self, ctx: commands.Context):
-        user_id = str(ctx.author.id)
+    @commands.hybrid_command(name="divorce", description="Divorce your partner.")
+    async def divorce(self, ctx):
+        uid       = str(ctx.author.id)
         marriages = load_marriages()
-        partner_id = marriages.get(user_id)
-
-        if not partner_id:
-            return await ctx.send(
-                embed=make_embed("Marriage", "❌ You are not married.")
-            )
-
-        marriages.pop(user_id, None)
-        marriages.pop(partner_id, None)
+        partner   = marriages.get(uid)
+        if not partner:
+            return await ctx.send(embed=warn("Divorce", "You're not married."))
+        marriages.pop(uid, None)
+        marriages.pop(partner, None)
         save_marriages(marriages)
-
         try:
-            partner = await self.bot.fetch_user(int(partner_id))
-            partner_mention = partner.mention
+            p_user   = await self.bot.fetch_user(int(partner))
+            p_name   = p_user.mention
         except Exception:
-            partner_mention = f"<@{partner_id}>"
+            p_name   = f"<@{partner}>"
+        e = embed("💔  Divorce", f"{ctx.author.mention} and {p_name} are now divorced.", C.LOSE)
+        await ctx.send(embed=e)
 
-        await ctx.send(
-            embed=make_embed(
-                "Divorce Complete",
-                f"💔 {ctx.author.mention} and {partner_mention} are now divorced."
-            )
-        )
-
-    @commands.hybrid_command(
-        name="partner",
-        description="View your or someone else's partner."
-    )
-    async def partner(self, ctx: commands.Context, member: discord.Member = None):
-        member = member or ctx.author
+    @commands.hybrid_command(name="partner", description="View your or someone else's partner.")
+    async def partner(self, ctx, member: discord.Member = None):
+        member    = member or ctx.author
         marriages = load_marriages()
-        partner_id = marriages.get(str(member.id))
-
-        if not partner_id:
-            return await ctx.send(
-                embed=make_embed("Partner", f"{member.display_name} is not married.")
-            )
-
+        partner   = marriages.get(str(member.id))
+        if not partner:
+            return await ctx.send(embed=embed("💔  No Partner", f"{member.display_name} is not married.", C.NEUTRAL))
         try:
-            partner_user = await self.bot.fetch_user(int(partner_id))
-            partner_name = partner_user.display_name
+            p_user = await self.bot.fetch_user(int(partner))
+            p_name = p_user.display_name
         except Exception:
-            partner_name = "Unknown User"
+            p_name = "Unknown User"
+        e = embed("💗  Partner", f"**{member.display_name}** is married to **{p_name}**. 💍", C.MARRIAGE)
+        e.set_thumbnail(url=member.display_avatar.url)
+        await ctx.send(embed=e)
 
-        await ctx.send(
-            embed=make_embed(
-                "Partner",
-                f"💗 {member.display_name}'s partner is **{partner_name}**."
-            )
-        )
-
-    @commands.hybrid_command(
-        name="flirt",
-        description="Flirt with someone using a cute compliment."
-    )
-    async def flirt(self, ctx: commands.Context, member: discord.Member):
+    @commands.hybrid_command(name="flirt", description="Flirt with someone.")
+    async def flirt(self, ctx, member: discord.Member):
         if member == ctx.author:
-            return await ctx.send(
-                embed=make_embed("Flirt", "😳 You can’t flirt with yourself... or can you?")
-            )
-
+            return await ctx.send(embed=embed("😳  Flirt", "Flirting with yourself... confidence, we respect it.", C.MARRIAGE))
         if member.bot:
-            return await ctx.send(
-                embed=make_embed("Flirt", "🤖 Bots don't understand love... yet.")
-            )
-
+            return await ctx.send(embed=embed("🤖  Flirt", "Bots don't understand love... yet.", C.NEUTRAL))
         lines = [
-            "Are you Wi-Fi? Because I’m feeling a strong connection.",
+            "Are you Wi-Fi? Because I'm feeling a strong connection.",
             "Do you have a map? I keep getting lost in your messages.",
             "If charm were XP, you'd be max level.",
-            "You’re the reason the server’s uptime just improved.",
-            "I’d share my last health potion with you. 💖",
+            "You're the reason the server's uptime just improved.",
+            "I'd share my last health potion with you. 💖",
         ]
-
-        await ctx.send(
-            embed=make_embed(
-                "Flirt",
-                f"{ctx.author.mention} flirts with {member.mention}:\n> {random.choice(lines)}"
-            )
+        e = embed(
+            f"💘  Flirt",
+            f"{ctx.author.mention} → {member.mention}\n\n> {random.choice(lines)}",
+            C.MARRIAGE,
+            footer=f"{ctx.author.display_name} → {member.display_name}",
         )
+        await ctx.send(embed=e)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot):
     await bot.add_cog(Marriage(bot))
