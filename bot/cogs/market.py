@@ -9,15 +9,12 @@ from storage import load_coins, save_coins, load_stocks, save_stocks
 from config import STOCKS
 
 
-EMBED_COLOR = discord.Color.from_rgb(28, 110, 110)
+from ui_utils import C, E, embed as _embed, error, success, warn
+EMBED_COLOR = C.MARKET
 
 
 def make_embed(title: str, description: str):
-    return discord.Embed(
-        title=title,
-        description=description,
-        color=EMBED_COLOR
-    )
+    return _embed(title, description, EMBED_COLOR)
 
 
 def ensure_user(coins, user_id):
@@ -73,12 +70,12 @@ class Stocks(commands.Cog):
         )
 
         embed = discord.Embed(
-            title="Market",
+            title="📈  Market",
             description=table,
             color=EMBED_COLOR
         )
 
-        embed.set_footer(text="Live market prices")
+        embed.set_footer(text="📊 Live prices  ·  Updated automatically")
 
         await ctx.send(embed=embed)
 
@@ -186,7 +183,7 @@ class Stocks(commands.Cog):
 
         embed = discord.Embed(
             title=stock_name,
-            description="Market View",
+            description="Current market snapshot",
             color=EMBED_COLOR
         )
 
@@ -195,7 +192,7 @@ class Stocks(commands.Cog):
         embed.add_field(name="History", value=f"`{len(history)}`", inline=True)
 
         embed.set_image(url="attachment://stock.png")
-        embed.set_footer(text="Stored market history")
+        embed.set_footer(text="📈 Historical price chart")
 
         await ctx.send(embed=embed, file=file)
 
@@ -250,7 +247,7 @@ class Stocks(commands.Cog):
         )
 
         embed = discord.Embed(
-            title=f"{member.display_name} — Portfolio",
+            title=f"📊  {member.display_name}'s Portfolio",
             description=table,
             color=EMBED_COLOR
         )
@@ -267,7 +264,7 @@ class Stocks(commands.Cog):
         name="buy",
         description="Buy shares of a stock."
     )
-    async def buy(self, ctx: commands.Context, stock: str, amount: int):
+    async def buy(self, ctx: commands.Context, stock: str, amount: str):
 
         stock_names = {s.lower(): s for s in STOCKS}
         key = stock.lower().strip()
@@ -275,41 +272,42 @@ class Stocks(commands.Cog):
         if key not in stock_names:
             return await ctx.send(embed=make_embed("Market", "Unknown stock."))
 
-        if amount <= 0:
-            return await ctx.send(embed=make_embed("Market", "Invalid amount."))
-
         stock_name = stock_names[key]
-
         stocks = load_stocks()
         price = int(stocks.get(stock_name, {}).get("price", 0))
-        cost = price * amount
-
+        if price <= 0:
+            return await ctx.send(embed=make_embed("Market", "That stock has no price data yet."))
         coins = load_coins()
         user = ensure_user(coins, ctx.author.id)
-
+        if isinstance(amount, str) and amount.lower() == "all":
+            qty = user["wallet"] // price
+            if qty <= 0:
+                return await ctx.send(embed=make_embed("Market", "Not enough coins to buy even 1 share."))
+        else:
+            try:
+                qty = int(amount)
+            except (ValueError, TypeError):
+                return await ctx.send(embed=make_embed("Market", "Enter a number or `all`."))
+        if qty <= 0:
+            return await ctx.send(embed=make_embed("Market", "Invalid amount."))
+        cost = price * qty
         if user["wallet"] < cost:
-            return await ctx.send(embed=make_embed("Market", "Not enough coins."))
-
+            afford = user["wallet"] // price
+            return await ctx.send(embed=make_embed("Market", f"Not enough coins. You can afford **{afford}** share(s) at {price} each."))
         user["wallet"] -= cost
-
         pf = user["portfolio"]
-        pf[stock_name] = int(pf.get(stock_name, 0)) + amount
-
+        pf[stock_name] = int(pf.get(stock_name, 0)) + qty
         save_coins(coins)
-
         tasks = self.bot.get_cog("BackgroundTasks")
         if tasks:
-            tasks.record_trade(stock_name, "buy", amount)
-
+            tasks.record_trade(stock_name, "buy", qty)
         embed = discord.Embed(
-            title="Order Filled",
-            description=f"Bought **{amount}** shares of **{stock_name}**.",
+            title="✅  Order Filled",
+            description=f"Bought **{qty}** shares of **{stock_name}**.",
             color=EMBED_COLOR
         )
-
-        embed.add_field(name="Cost", value=f"`{cost}`", inline=True)
-        embed.add_field(name="Price", value=f"`{price}` each", inline=True)
-
+        embed.add_field(name="Cost",  value=f"`{cost:,}`",       inline=True)
+        embed.add_field(name="Price", value=f"`{price:,}` each", inline=True)
         await ctx.send(embed=embed)
 
     # -------------------------
@@ -356,7 +354,7 @@ class Stocks(commands.Cog):
             tasks.record_trade(stock_name, "sell", amount)
 
         embed = discord.Embed(
-            title="Order Filled",
+            title="✅  Order Filled",
             description=f"Sold **{amount}** shares of **{stock_name}**.",
             color=EMBED_COLOR
         )
@@ -386,7 +384,7 @@ class Stocks(commands.Cog):
         save_stocks(stocks)
 
         embed = discord.Embed(
-            title="Market Reset",
+            title="⚠️  Market Reset",
             description="All stock prices have been reset to **100 coins**.",
             color=EMBED_COLOR
         )
