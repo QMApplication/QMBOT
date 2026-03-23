@@ -1,112 +1,75 @@
 """
-fun.py — Extra fun & utility commands
-
-Commands added:
-  /8ball          — Ask the magic 8-ball
-  /roll           — Roll any dice (e.g. 2d6, d20)
-  /rps            — Rock Paper Scissors vs the bot
-  /slots          — Spin a slot machine
-  /highlow        — Higher or lower number game
-  /wordcount       — Count words/chars in a message
-  /reverse        — Reverse any text
-  /mock           — SpOnGeBoB mOcK tExT
-  /emojify        — Turn text into letter emoji
-  /rate           — Bot rates something out of 10
-  /ship           — Ship two users and get a score
-  /howgay         — Classic % command
-  /iq             — Generate someone's IQ score
-  /simp           — Simp score
-  /pp             — Classic pp size command
-  /would_you_rather — Random would you rather question
-  /fact           — Random interesting fact
-  /quote          — Random motivational quote
-  /roast          — Auto-roast a user
-  /hug            — Hug a user (with GIF)
-  /pat            — Pat a user (with GIF)
-  /bonk           — Bonk a user (with GIF)
-  /kill           — Dramatically kill a user
-  /choose         — Pick from a list of options
-  /poll           — Quick reaction poll
-  /countdown      — Post a countdown (seconds, live)
-  /ascii          — Text to ASCII art
-  /uwuify         — UwUify any text
-  /clap           — Add 👏 between every word
-  /googleit       — Send a "let me google that" link
-  /topic          — Random conversation starter
-  /dare           — Random dare
-  /nhie           — Never have I ever
-  /confession     — Anonymous confession to a channel
+fun.py — Fun commands
+Removed: ascii, reverse, roll, poll, highlow, googleit, wordcount
+Renamed: uwuify -> fandomify
+Added: cooldowns on iq/rate, Next buttons on nhie/wyr, quote from replied message,
+       howgay uses pfp + percentage bar only, RPS vs another person
 """
 
 import asyncio
+import hashlib
+import io
 import random
 import time
 import re
+from datetime import date
+
 import aiohttp
 import discord
 from discord.ext import commands
 
 from ui_utils import C, E, embed, error, warn, success
 
-# ─── Data ─────────────────────────────────────────────────────────────────────
+TENOR_API_KEY = "AIzaSyAyimkuEcdEnPs55ueys84EMt_lFe0BXKQ"
+TENOR_BASE    = "https://tenor.googleapis.com/v2/search"
+
+# Cooldowns  uid -> last_used timestamp
+_iq_cd:   dict[int, float] = {}
+_rate_cd: dict[int, float] = {}
+IQ_COOLDOWN   = 3600   # 1 hour
+RATE_COOLDOWN = 300    # 5 minutes
 
 EIGHT_BALL_RESPONSES = [
-    # positive
-    ("It is certain.",          True),
-    ("Without a doubt.",        True),
-    ("You may rely on it.",     True),
-    ("Yes, definitely.",        True),
-    ("As I see it, yes.",       True),
-    ("Most likely.",            True),
-    ("Outlook good.",           True),
-    ("Signs point to yes.",     True),
-    # neutral
-    ("Reply hazy, try again.",  None),
-    ("Ask again later.",        None),
-    ("Cannot predict now.",     None),
+    ("It is certain.",              True),
+    ("Without a doubt.",            True),
+    ("You may rely on it.",         True),
+    ("Yes, definitely.",            True),
+    ("As I see it, yes.",           True),
+    ("Most likely.",                True),
+    ("Outlook good.",               True),
+    ("Signs point to yes.",         True),
+    ("Reply hazy, try again.",      None),
+    ("Ask again later.",            None),
+    ("Cannot predict now.",         None),
     ("Concentrate and ask again.", None),
-    # negative
-    ("Don't count on it.",      False),
-    ("My reply is no.",         False),
-    ("Very doubtful.",          False),
-    ("Outlook not so good.",    False),
-    ("My sources say no.",      False),
+    ("Don't count on it.",          False),
+    ("My reply is no.",             False),
+    ("Very doubtful.",              False),
+    ("Outlook not so good.",        False),
+    ("My sources say no.",          False),
 ]
-
-SLOT_SYMBOLS = ["🍒", "🍋", "🍊", "🍇", "🍓", "💎", "7️⃣", "🃏"]
-SLOT_WEIGHTS = [30, 25, 20, 15, 10, 5, 3, 2]
 
 FACTS = [
     "Honey never spoils. Archaeologists found 3000-year-old honey in Egyptian tombs that was still edible.",
     "A day on Venus is longer than a year on Venus.",
     "Octopuses have three hearts, and two of them stop beating when they swim.",
-    "The shortest war in history lasted 38–45 minutes between Britain and Zanzibar in 1896.",
+    "The shortest war in history lasted 38–45 minutes — Britain vs Zanzibar, 1896.",
     "Cleopatra lived closer in time to the Moon landing than to the construction of the Great Pyramid.",
     "Bananas are slightly radioactive due to their potassium content.",
     "A group of flamingos is called a flamboyance.",
     "The inventor of the frisbee was turned into a frisbee after he died. His ashes were pressed into one.",
     "Wombat poo is cube-shaped. No other animal produces cube-shaped faeces.",
-    "There are more possible iterations of a game of chess than there are atoms in the observable universe.",
+    "There are more possible iterations of a chess game than atoms in the observable universe.",
     "The average person walks past 36 murderers in their lifetime. Sleep well.",
     "Crows can recognise human faces and hold grudges for years.",
     "A bolt of lightning contains enough energy to toast about 100,000 slices of bread.",
     "The unicorn is Scotland's national animal.",
     "Pineapples take about 2 years to grow.",
-]
-
-QUOTES = [
-    ("The only way to do great work is to love what you do.", "Steve Jobs"),
-    ("It does not matter how slowly you go, as long as you do not stop.", "Confucius"),
-    ("Life is what happens when you're busy making other plans.", "John Lennon"),
-    ("In the middle of every difficulty lies opportunity.", "Albert Einstein"),
-    ("The future belongs to those who believe in the beauty of their dreams.", "Eleanor Roosevelt"),
-    ("It always seems impossible until it is done.", "Nelson Mandela"),
-    ("You miss 100% of the shots you don't take.", "Wayne Gretzky"),
-    ("Whether you think you can or you think you can't, you're right.", "Henry Ford"),
-    ("Two things are infinite: the universe and human stupidity. And I'm not sure about the universe.", "Albert Einstein"),
-    ("Be yourself; everyone else is already taken.", "Oscar Wilde"),
-    ("So many books, so little time.", "Frank Zappa"),
-    ("A room without books is like a body without a soul.", "Marcus Tullius Cicero"),
+    "Sharks are older than trees. They've been around for over 450 million years.",
+    "There are more stars in the universe than grains of sand on all of Earth's beaches.",
+    "The inventor of the world wide web, Tim Berners-Lee, never patented it — he gave it away for free.",
+    "A day on Mercury lasts longer than a year on Mercury.",
+    "Humans share 50% of their DNA with bananas.",
 ]
 
 ROASTS = [
@@ -133,18 +96,16 @@ WYR_QUESTIONS = [
     "Would you rather have hiccups for the rest of your life or always feel like you need to sneeze?",
     "Would you rather be famous but hated or unknown but beloved?",
     "Would you rather have a rewind button for your life or a pause button?",
-]
-
-DARES = [
-    "Message someone random in this server and say 'I know what you did'.",
-    "Change your nickname to something embarrassing for the next hour.",
-    "Send a voice message of you singing any song.",
-    "Post your screen time stats.",
-    "Tell us your most embarrassing autocorrect fail.",
-    "Send the last thing you copied to your clipboard.",
-    "Type with your elbows for your next three messages.",
-    "Say something genuinely nice about every person in this channel.",
-    "Send your most recent photo from your camera roll.",
+    "Would you rather be able to read minds but never be able to turn it off, or be completely invisible but only when no one is looking?",
+    "Would you rather give up the internet for a year or give up all streaming services forever?",
+    "Would you rather have the ability to speak every language fluently or play every instrument perfectly?",
+    "Would you rather always be 10 minutes late or always be 2 hours early?",
+    "Would you rather have no phone for a month or no food for a week?",
+    "Would you rather live in a world without music or a world without colour?",
+    "Would you rather be able to pause time or rewind it, but only once per day?",
+    "Would you rather be the funniest person in the room or the smartest?",
+    "Would you rather know every language but only speak in riddles, or speak normally but only in your native tongue forever?",
+    "Would you rather have to whisper everything you say or shout everything you say?",
 ]
 
 NHIE = [
@@ -158,32 +119,60 @@ NHIE = [
     "Never have I ever eaten food that fell on the floor.",
     "Never have I ever Googled myself.",
     "Never have I ever stayed up past 4 AM for no real reason.",
+    "Never have I ever cried at a movie and denied it afterwards.",
+    "Never have I ever bought something expensive and hidden it from someone.",
+    "Never have I ever pretended to laugh at a joke I didn't get.",
+    "Never have I ever faked being sick to get out of plans.",
+    "Never have I ever eavesdropped on a conversation I wasn't part of.",
+    "Never have I ever read someone's messages without them knowing.",
+    "Never have I ever convinced someone of something completely false just to see if they'd believe it.",
+    "Never have I ever ended a friendship over something absolutely petty.",
+    "Never have I ever cheated at a board game and got away with it.",
+    "Never have I ever regretted sending a message before it even arrived.",
 ]
 
 TOPICS = [
-    "What's a skill you've always wanted to learn but never started?",
-    "What's the worst advice you've ever received?",
-    "What's a movie you think everyone is completely wrong about?",
-    "If you could have dinner with anyone dead or alive, who and why?",
-    "What's the most useless talent you have?",
-    "Hot take: what opinion would get you cancelled in this server?",
-    "What's a hill you will absolutely die on?",
-    "What's the funniest thing that happened to you this week?",
-    "If you had to eat one cuisine for the rest of your life, what is it?",
-    "What's a technology you genuinely think is overrated?",
+    "If you found out your whole life was a simulation, what's the first thing you'd test?",
+    "What's the most genuinely useful skill most people don't have?",
+    "If aliens landed and you were the first human they met, what's the first thing you'd say?",
+    "What's something that was embarrassing 5 years ago that's now completely normal?",
+    "If you could delete one song from existence — not ban it, delete it from ever existing — what is it?",
+    "What's a law that doesn't exist but absolutely should?",
+    "If you had to pick one person in this server to survive a zombie apocalypse with, who and why?",
+    "What's the most expensive lesson you've ever learned?",
+    "At what point does a collection become a problem?",
+    "What's an opinion you hold that you know the majority disagrees with?",
+    "If your personality was a type of weather, what would it be?",
+    "What's a universally loved thing that you genuinely don't understand the appeal of?",
+    "If you could know the absolute truth to one question, what would you ask?",
+    "What's the most chaotic thing someone could do that isn't technically illegal?",
+    "What's the worst way a story could end?",
+    "If you had to eat one meal for the rest of your life, what do you choose and what goes wrong?",
+    "What skill do you have that would be genuinely useless if society collapsed?",
+    "What's the fastest way to lose a friend without being directly rude?",
+    "What mundane superpower would actually change your life the most?",
+    "If this server were a country, what would the national dish be and why is it something cursed?",
 ]
 
-ASCII_FONT = {
-    'a':'/-\\', 'b':'|--', 'c':'/--', 'd':'|\\',  'e':'|==',
-    'f':'|=',  'g':'(-', 'h':'|-|', 'i':'|',   'j':'-|',
-    'k':'|<',  'l':'|_', 'm':'|\\/|','n':'|\\|', 'o':'()',
-    'p':'|o',  'q':'o|', 'r':'|--', 's':'$',   't':'T',
-    'u':'U',   'v':'V',  'w':'W',   'x':'><',   'y':'Y',
-    'z':'Z',   ' ':' ',
-}
+DARES = [
+    "Message someone random in this server and say 'I know what you did'.",
+    "Change your nickname to something embarrassing for the next hour.",
+    "Send a voice message of you singing any song.",
+    "Post your screen time stats.",
+    "Tell us your most embarrassing autocorrect fail.",
+    "Send the last thing you copied to your clipboard.",
+    "Type with your elbows for your next three messages.",
+    "Say something genuinely nice about every person in this channel.",
+    "Send your most recent photo from your camera roll.",
+    "DM someone 'I think we need to talk' and wait 2 minutes before saying it's a dare.",
+    "Post your Spotify top artist or most played song.",
+    "Write a 3-line poem about the person above you right now.",
+]
 
-TENOR_API_KEY = "AIzaSyAyimkuEcdEnPs55ueys84EMt_lFe0BXKQ"
-TENOR_BASE    = "https://tenor.googleapis.com/v2/search"
+
+def _seed(text: str) -> int:
+    key = f"{text.lower().strip()}{date.today().isoformat()}"
+    return int(hashlib.md5(key.encode()).hexdigest(), 16) % 101
 
 
 async def fetch_gif(query: str) -> str | None:
@@ -209,144 +198,139 @@ async def fetch_gif(query: str) -> str | None:
         return None
 
 
-def _seed_value(text: str) -> int:
-    """Deterministic seed from a string — same input = same result every day."""
-    import hashlib
-    from datetime import date
-    key = f"{text.lower().strip()}{date.today().isoformat()}"
-    return int(hashlib.md5(key.encode()).hexdigest(), 16) % 101
+def _cd_remaining(store: dict, uid: int, seconds: int) -> int:
+    last = store.get(uid, 0)
+    remaining = int(seconds - (time.time() - last))
+    return max(0, remaining)
 
 
-# ─── Higher / Lower View ──────────────────────────────────────────────────────
+# ─── WYR View (Next button) ───────────────────────────────────────────────────
 
-class HighLowView(discord.ui.View):
-    def __init__(self, author_id: int, secret: int):
-        super().__init__(timeout=30)
-        self.author_id = author_id
-        self.secret    = secret
-        self.guesses   = 0
-        self.message   = None
+class WYRView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=120)
 
-    async def interaction_check(self, interaction):
-        if interaction.user.id != self.author_id:
-            await interaction.response.send_message(embed=error("High Low", "Not your game."), ephemeral=True)
+    @discord.ui.button(label="Next Question", style=discord.ButtonStyle.primary)
+    async def next_q(self, interaction: discord.Interaction, button: discord.ui.Button):
+        q = random.choice(WYR_QUESTIONS)
+        e = embed("🤔  Would You Rather…", q, C.GAMES,
+                  footer=f"Asked by {interaction.user.display_name}")
+        view = WYRView()
+        await interaction.response.edit_message(embed=e, view=view)
+
+
+# ─── NHIE View (Next button) ──────────────────────────────────────────────────
+
+class NHIEView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=120)
+        self.current = random.choice(NHIE)
+
+    def build_embed(self) -> discord.Embed:
+        return embed("🙋  Never Have I Ever…", self.current, C.GAMES,
+                     footer="Press I Have or I Haven't — or get a new one!")
+
+    @discord.ui.button(label="✋  I Have", style=discord.ButtonStyle.danger)
+    async def have(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            embed=embed("📢", f"{interaction.user.mention} **HAS** done this 👀", C.LOSE),
+            ephemeral=False
+        )
+
+    @discord.ui.button(label="🙅  I Haven't", style=discord.ButtonStyle.success)
+    async def havent(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            embed=embed("📢", f"{interaction.user.mention} has **NOT** done this ✅", C.WIN),
+            ephemeral=False
+        )
+
+    @discord.ui.button(label="Next", style=discord.ButtonStyle.secondary)
+    async def next_q(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.current = random.choice(NHIE)
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+
+# ─── RPS vs Player ────────────────────────────────────────────────────────────
+
+class RPSChallengeView(discord.ui.View):
+    BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
+    EMOJI = {"rock": "🪨", "paper": "📄", "scissors": "✂️"}
+
+    def __init__(self, challenger: discord.Member, opponent: discord.Member):
+        super().__init__(timeout=60)
+        self.challenger = challenger
+        self.opponent   = opponent
+        self.choices: dict[int, str] = {}
+        self.message = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id not in (self.challenger.id, self.opponent.id):
+            await interaction.response.send_message(
+                embed=error("RPS", "You're not in this game."), ephemeral=True)
             return False
         return True
 
-    async def _check(self, interaction, guess: int):
-        self.guesses += 1
-        if guess == self.secret:
-            for c in self.children: c.disabled = True
-            e = success("Correct! 🎯", f"The number was **{self.secret}**!\nYou got it in **{self.guesses}** guess(es).")
-            await interaction.response.edit_message(embed=e, view=self)
-            self.stop()
-        elif guess < self.secret:
-            e = embed("🔼  Higher!", f"Not **{guess}**. Go **higher**!\nGuesses: {self.guesses}", C.TRIVIA)
-            await interaction.response.edit_message(embed=e, view=self)
+    def _make_cb(self, choice: str):
+        async def callback(interaction: discord.Interaction):
+            uid = interaction.user.id
+            if uid in self.choices:
+                await interaction.response.send_message(
+                    embed=warn("RPS", "You already picked!"), ephemeral=True)
+                return
+            self.choices[uid] = choice
+            await interaction.response.send_message(
+                embed=embed("🤫  Locked In", f"You chose **{self.EMOJI[choice]} {choice}**. Waiting for opponent…", C.NEUTRAL),
+                ephemeral=True,
+            )
+            if len(self.choices) == 2:
+                await self._resolve()
+        return callback
+
+    async def _resolve(self):
+        for c in self.children:
+            c.disabled = True
+        c1 = self.choices[self.challenger.id]
+        c2 = self.choices[self.opponent.id]
+        e1, e2 = self.EMOJI[c1], self.EMOJI[c2]
+        if c1 == c2:
+            result = "**Tie!** 🤝"
+            color  = C.NEUTRAL
+        elif self.BEATS[c1] == c2:
+            result = f"**{self.challenger.display_name} wins!** 🎉"
+            color  = C.WIN
         else:
-            e = embed("🔽  Lower!", f"Not **{guess}**. Go **lower**!\nGuesses: {self.guesses}", C.TRIVIA)
-            await interaction.response.edit_message(embed=e, view=self)
+            result = f"**{self.opponent.display_name} wins!** 🎉"
+            color  = C.WIN
+        desc = (
+            f"{self.challenger.mention}  {e1} **{c1}**\n"
+            f"{self.opponent.mention}  {e2} **{c2}**\n\n"
+            f"{result}"
+        )
+        e = embed("🪨📄✂️  Result", desc, color)
+        if self.message:
+            await self.message.edit(embed=e, view=self)
+        self.stop()
 
     async def on_timeout(self):
-        for c in self.children: c.disabled = True
+        for c in self.children:
+            c.disabled = True
+        missing = []
+        if self.challenger.id not in self.choices:
+            missing.append(self.challenger.display_name)
+        if self.opponent.id not in self.choices:
+            missing.append(self.opponent.display_name)
         if self.message:
-            await self.message.edit(embed=warn("Timed Out", f"The number was **{self.secret}**."), view=self)
+            await self.message.edit(
+                embed=warn("RPS Timed Out", f"{', '.join(missing)} didn't pick in time."),
+                view=self,
+            )
 
-    @discord.ui.button(label="1–25",  style=discord.ButtonStyle.secondary)
-    async def q1(self, i, b): await self._prompt(i, 1, 25)
-    @discord.ui.button(label="26–50", style=discord.ButtonStyle.secondary)
-    async def q2(self, i, b): await self._prompt(i, 26, 50)
-    @discord.ui.button(label="51–75", style=discord.ButtonStyle.secondary)
-    async def q3(self, i, b): await self._prompt(i, 51, 75)
-    @discord.ui.button(label="76–100",style=discord.ButtonStyle.secondary)
-    async def q4(self, i, b): await self._prompt(i, 76, 100)
-
-    async def _prompt(self, interaction, lo, hi):
-        guess = random.randint(lo, hi)  # pick midpoint of range for demo; real game uses modal
-        # Instead show the range as the guess attempt mid
-        guess = (lo + hi) // 2
-        await self._check(interaction, guess)
-
-
-# ─── RPS View ─────────────────────────────────────────────────────────────────
-
-class RPSView(discord.ui.View):
-    CHOICES = {"🪨 Rock": "rock", "📄 Paper": "paper", "✂️ Scissors": "scissors"}
-    BEATS   = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
-
-    def __init__(self, author_id: int):
-        super().__init__(timeout=20)
-        self.author_id = author_id
-        for label in self.CHOICES:
-            btn          = discord.ui.Button(label=label, style=discord.ButtonStyle.secondary)
-            btn.callback = self._make_cb(self.CHOICES[label])
-            self.add_item(btn)
-
-    async def interaction_check(self, interaction):
-        if interaction.user.id != self.author_id:
-            await interaction.response.send_message(embed=error("RPS", "Not your game."), ephemeral=True)
-            return False
-        return True
-
-    def _make_cb(self, player_choice):
-        async def callback(interaction):
-            bot_choice = random.choice(list(self.BEATS.keys()))
-            for c in self.children: c.disabled = True
-            emoji_map = {"rock": "🪨", "paper": "📄", "scissors": "✂️"}
-            pe = emoji_map[player_choice]
-            be = emoji_map[bot_choice]
-            if player_choice == bot_choice:
-                result = "**Tie!** 🤝"
-                color  = C.NEUTRAL
-            elif self.BEATS[player_choice] == bot_choice:
-                result = f"**You win!** {E.WIN}"
-                color  = C.WIN
-            else:
-                result = f"**Bot wins!** {E.LOSE}"
-                color  = C.LOSE
-            e = embed("🪨📄✂️  Rock Paper Scissors",
-                      f"You: **{pe} {player_choice.capitalize()}**\nBot: **{be} {bot_choice.capitalize()}**\n\n{result}",
-                      color)
-            await interaction.response.edit_message(embed=e, view=self)
-            self.stop()
-        return callback
-
-
-# ─── Poll View ────────────────────────────────────────────────────────────────
-
-class PollView(discord.ui.View):
-    def __init__(self, options: list[str]):
-        super().__init__(timeout=300)
-        self.options = options
-        self.votes: dict[int, int] = {}   # user_id -> option_index
-        self.counts = [0] * len(options)
-        emojis = ["🇦","🇧","🇨","🇩","🇪","🇫","🇬","🇭"]
-        for i, opt in enumerate(options[:8]):
-            btn          = discord.ui.Button(label=f"{emojis[i]} {opt[:50]}", style=discord.ButtonStyle.secondary)
-            btn.callback = self._make_cb(i)
-            self.add_item(btn)
-
-    def _make_cb(self, idx: int):
-        async def callback(interaction):
-            uid = interaction.user.id
-            if uid in self.votes:
-                old = self.votes[uid]
-                self.counts[old] = max(0, self.counts[old] - 1)
-            self.votes[uid]    = idx
-            self.counts[idx]  += 1
-            await interaction.response.edit_message(embed=self._build_embed(), view=self)
-        return callback
-
-    def _build_embed(self) -> discord.Embed:
-        total  = sum(self.counts)
-        emojis = ["🇦","🇧","🇨","🇩","🇪","🇫","🇬","🇭"]
-        lines  = []
-        for i, opt in enumerate(self.options):
-            pct = (self.counts[i] / total * 100) if total else 0
-            bar = "█" * int(pct / 10) + "░" * (10 - int(pct / 10))
-            lines.append(f"{emojis[i]} **{opt}**\n`{bar}` {self.counts[i]} vote(s) ({pct:.0f}%)")
-        e = embed("📊  Live Poll", "\n\n".join(lines), C.TRIVIA, footer=f"{total} total vote(s)  ·  Vote changes allowed")
-        return e
+    @discord.ui.button(label="🪨  Rock",     style=discord.ButtonStyle.secondary)
+    async def rock(self, i, b):     await self._make_cb("rock")(i)
+    @discord.ui.button(label="📄  Paper",    style=discord.ButtonStyle.secondary)
+    async def paper(self, i, b):    await self._make_cb("paper")(i)
+    @discord.ui.button(label="✂️  Scissors", style=discord.ButtonStyle.secondary)
+    async def scissors(self, i, b): await self._make_cb("scissors")(i)
 
 
 # ─── Cog ──────────────────────────────────────────────────────────────────────
@@ -356,82 +340,32 @@ class Fun(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # ── 8 BALL ────────────────────────────────────────────────────────────────
-
     @commands.hybrid_command(name="8ball", description="Ask the magic 8-ball a question.")
     async def eightball(self, ctx, *, question: str):
         response, positive = random.choice(EIGHT_BALL_RESPONSES)
-        color = C.WIN if positive is True else (C.LOSE if positive is False else C.NEUTRAL)
+        color  = C.WIN if positive is True else (C.LOSE if positive is False else C.NEUTRAL)
         symbol = "✅" if positive is True else ("❌" if positive is False else "🔮")
         e = embed("🎱  Magic 8-Ball",
                   f"**{ctx.author.display_name} asks:**\n> {question}\n\n{symbol}  *{response}*",
                   color, footer="The 8-ball has spoken.")
         await ctx.send(embed=e)
 
-    # ── ROLL ──────────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="roll", description="Roll dice. e.g. /roll 2d6  or  /roll d20")
-    async def roll(self, ctx, dice: str = "d6"):
-        pattern = re.fullmatch(r"(\d+)?d(\d+)", dice.lower().strip())
-        if not pattern:
-            return await ctx.send(embed=error("Roll", "Format: `2d6`, `d20`, `3d100` etc."))
-        count = int(pattern.group(1) or 1)
-        sides = int(pattern.group(2))
-        if count > 50:
-            return await ctx.send(embed=error("Roll", "Max 50 dice at once."))
-        if sides < 2:
-            return await ctx.send(embed=error("Roll", "Dice need at least 2 sides."))
-        rolls  = [random.randint(1, sides) for _ in range(count)]
-        total  = sum(rolls)
-        desc   = f"🎲 **{dice.upper()}** → `{total}`"
-        if count > 1:
-            desc += f"\n\nIndividual rolls: {', '.join(f'`{r}`' for r in rolls)}"
-        e = embed("🎲  Dice Roll", desc, C.GAMES)
-        await ctx.send(embed=e)
-
-    # ── RPS ───────────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="rps", description="Play Rock Paper Scissors against the bot.")
-    async def rps(self, ctx):
-        e = embed("🪨📄✂️  Rock Paper Scissors", "Choose your weapon!", C.GAMES)
-        view = RPSView(ctx.author.id)
-        await ctx.send(embed=e, view=view)
-
-    # ── SLOTS ─────────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="slots", description="Spin the slot machine (free play).")
-    async def slots(self, ctx):
-        def spin():
-            return random.choices(SLOT_SYMBOLS, weights=SLOT_WEIGHTS, k=3)
-
-        result   = spin()
-        unique   = len(set(result))
-        if unique == 1:
-            outcome = f"🎉 **JACKPOT!**  Three of a kind — **{result[0]}**!"
-            color   = C.WIN
-        elif unique == 2:
-            outcome = f"✨ **Two of a kind!**  Not bad."
-            color   = C.TRIVIA
-        else:
-            outcome = "No match. Better luck next time."
-            color   = C.NEUTRAL
-
-        e = embed("🎰  Slot Machine",
-                  f"┌───┬───┬───┐\n│ {result[0]} │ {result[1]} │ {result[2]} │\n└───┴───┴───┘\n\n{outcome}",
-                  color)
-        await ctx.send(embed=e)
-
-    # ── HIGH LOW ──────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="highlow", description="Guess a number between 1–100.")
-    async def highlow(self, ctx):
-        secret = random.randint(1, 100)
-        e = embed("🔢  Higher or Lower", "I'm thinking of a number between **1** and **100**.\nPick a range to guess!", C.GAMES)
-        view = HighLowView(ctx.author.id, secret)
-        msg  = await ctx.send(embed=e, view=view)
+    @commands.hybrid_command(name="rps", description="Challenge someone to Rock Paper Scissors.")
+    async def rps(self, ctx, opponent: discord.Member):
+        if opponent == ctx.author:
+            return await ctx.send(embed=error("RPS", "You can't play yourself."))
+        if opponent.bot:
+            return await ctx.send(embed=error("RPS", "Bots don't have thumbs."))
+        view = RPSChallengeView(ctx.author, opponent)
+        e = embed(
+            "🪨📄✂️  Rock Paper Scissors",
+            f"{ctx.author.mention} has challenged {opponent.mention}!\n\n"
+            f"**Both players** — pick your weapon below.\nYour choice is hidden until both have picked.",
+            C.GAMES,
+            footer="60 seconds to choose",
+        )
+        msg = await ctx.send(embed=e, view=view)
         view.message = msg
-
-    # ── CHOOSE ────────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="choose", description="Pick one option from a comma-separated list.")
     async def choose(self, ctx, *, options: str):
@@ -439,107 +373,93 @@ class Fun(commands.Cog):
         if len(choices) < 2:
             return await ctx.send(embed=error("Choose", "Give me at least 2 options, separated by commas."))
         picked = random.choice(choices)
-        e = embed("🤔  The bot chooses…",
-                  f"**{picked}**\n\n*From: {', '.join(choices)}*", C.GAMES)
+        e = embed("🤔  The bot chooses…", f"**{picked}**\n\n*From: {', '.join(choices)}*", C.GAMES)
         await ctx.send(embed=e)
-
-    # ── POLL ──────────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="poll", description="Create a live reaction poll. Separate options with commas.")
-    async def poll(self, ctx, question: str, *, options: str):
-        opts = [o.strip() for o in options.split(",") if o.strip()]
-        if len(opts) < 2:
-            return await ctx.send(embed=error("Poll", "Need at least 2 options."))
-        if len(opts) > 8:
-            return await ctx.send(embed=error("Poll", "Max 8 options."))
-        view = PollView(opts)
-        header = embed(f"📊  {question}", "Loading poll…", C.TRIVIA, footer="Poll is live for 5 minutes · You can change your vote")
-        msg  = await ctx.send(embed=view._build_embed(), view=view)
-
-    # ── SHIP ──────────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="ship", description="Ship two users and get a compatibility score.")
     async def ship(self, ctx, user1: discord.Member, user2: discord.Member):
-        score = _seed_value(f"{min(user1.id, user2.id)}{max(user1.id, user2.id)}")
-        bar   = "💗" * (score // 10) + "🖤" * (10 - score // 10)
-        if score >= 90:
-            verdict = "Absolutely soulmates. 💍"
-        elif score >= 70:
-            verdict = "Strong vibes. 💕"
-        elif score >= 50:
-            verdict = "Could work with effort. 🤔"
-        elif score >= 30:
-            verdict = "Complicated... 😬"
-        else:
-            verdict = "Run. Now. 💀"
+        score     = _seed(f"{min(user1.id, user2.id)}{max(user1.id, user2.id)}")
+        filled    = score // 10
+        bar       = "█" * filled + "░" * (10 - filled)
+        if score >= 90:   verdict = "Absolutely soulmates. 💍"
+        elif score >= 70: verdict = "Strong vibes. 💕"
+        elif score >= 50: verdict = "Could work with effort. 🤔"
+        elif score >= 30: verdict = "Complicated... 😬"
+        else:             verdict = "Run. Now. 💀"
         ship_name = user1.display_name[:len(user1.display_name)//2] + user2.display_name[len(user2.display_name)//2:]
         e = embed(
-            f"💘  Shipping {user1.display_name} × {user2.display_name}",
-            f"**Ship name:** _{ship_name}_\n\n{bar}\n**{score}%** — {verdict}",
+            f"💘  {user1.display_name} × {user2.display_name}",
+            f"**Ship name:** _{ship_name}_\n\n`{bar}` **{score}%**\n{verdict}",
             C.MARRIAGE,
         )
         await ctx.send(embed=e)
 
-    # ── HOW GAY ───────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="howgay", description="🏳️‍🌈 How gay are you today?")
+    @commands.hybrid_command(name="howgay", description="How gay are you today?")
     async def howgay(self, ctx, member: discord.Member = None):
         member = member or ctx.author
-        score  = _seed_value(f"gay{member.id}")
-        bar    = "🏳️‍🌈" * (score // 10) + "⬜" * (10 - score // 10)
-        e = embed(f"🏳️‍🌈  Gay-O-Meter", f"{member.mention}\n\n{bar}\n**{score}%** gay today.", C.SOCIAL)
+        score  = _seed(f"gay{member.id}")
+        filled = score // 10
+        bar    = "█" * filled + "░" * (10 - filled)
+        e = embed(
+            "Gay-O-Meter",
+            f"`{bar}` **{score}%**",
+            C.SOCIAL,
+            footer=f"Results for {member.display_name}",
+        )
+        e.set_thumbnail(url=member.display_avatar.url)
         await ctx.send(embed=e)
-
-    # ── IQ ────────────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="iq", description="Check someone's IQ score.")
     async def iq(self, ctx, member: discord.Member = None):
+        uid = ctx.author.id
+        remaining = _cd_remaining(_iq_cd, uid, IQ_COOLDOWN)
+        if remaining:
+            m, s = divmod(remaining, 60)
+            h, m = divmod(m, 60)
+            return await ctx.send(embed=warn("IQ Cooldown", f"Your brain needs rest. Try again in **{h}h {m}m {s}s**."))
+        _iq_cd[uid] = time.time()
         member = member or ctx.author
-        score  = _seed_value(f"iq{member.id}")
-        iq     = max(1, int(score * 2.5))  # 1–250
-        if iq >= 200:
-            verdict = "Literally Einstein reborn."
-        elif iq >= 140:
-            verdict = "Certified genius territory."
-        elif iq >= 100:
-            verdict = "Average. Disappointingly average."
-        elif iq >= 70:
-            verdict = "Concerning."
-        else:
-            verdict = "How are you even typing?"
-        e = embed("🧠  IQ Test Results", f"{member.mention}\n\n**IQ: {iq}**\n_{verdict}_", C.TRIVIA)
+        score  = _seed(f"iq{member.id}")
+        iq_val = max(1, int(score * 2.5))
+        if iq_val >= 200:   verdict = "Literally Einstein reborn."
+        elif iq_val >= 140: verdict = "Certified genius territory."
+        elif iq_val >= 100: verdict = "Average. Disappointingly average."
+        elif iq_val >= 70:  verdict = "Concerning."
+        else:               verdict = "How are you even typing?"
+        e = embed("🧠  IQ Test Results", f"{member.mention}\n\n**IQ: {iq_val}**\n_{verdict}_", C.TRIVIA,
+                  footer="Cooldown: 1 hour")
+        e.set_thumbnail(url=member.display_avatar.url)
         await ctx.send(embed=e)
-
-    # ── SIMP ──────────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="simp", description="How much of a simp are you?")
     async def simp(self, ctx, member: discord.Member = None):
         member = member or ctx.author
-        score  = _seed_value(f"simp{member.id}")
-        bar    = "💝" * (score // 10) + "🖤" * (10 - score // 10)
-        e = embed("💝  Simp Detector", f"{member.mention}\n\n{bar}\n**{score}% simp**", C.MARRIAGE)
+        score  = _seed(f"simp{member.id}")
+        filled = score // 10
+        bar    = "█" * filled + "░" * (10 - filled)
+        e = embed("💝  Simp Detector", f"{member.mention}\n\n`{bar}` **{score}% simp**", C.MARRIAGE)
+        e.set_thumbnail(url=member.display_avatar.url)
         await ctx.send(embed=e)
-
-    # ── PP ────────────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="pp", description="The important measurement.")
     async def pp(self, ctx, member: discord.Member = None):
         member = member or ctx.author
-        size   = _seed_value(f"pp{member.id}") // 10
-        shaft  = "=" * size
-        e = embed("📏  PP Size", f"{member.mention}\n\n8{shaft}D\n\n**{size} inches**", C.NEUTRAL)
+        size   = _seed(f"pp{member.id}") // 10
+        e = embed("📏  PP Size", f"{member.mention}\n\n`8{'=' * size}D`\n\n**{size} inches**", C.NEUTRAL)
         await ctx.send(embed=e)
-
-    # ── RATE ──────────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="rate", description="Bot rates anything out of 10.")
     async def rate(self, ctx, *, thing: str):
-        score = _seed_value(thing) // 10
-        bar   = "⭐" * score + "☆" * (10 - score)
-        e = embed("⭐  Rating", f"**{thing}**\n\n{bar}\n**{score}/10**", C.TRIVIA)
+        uid = ctx.author.id
+        remaining = _cd_remaining(_rate_cd, uid, RATE_COOLDOWN)
+        if remaining:
+            return await ctx.send(embed=warn("Rate Cooldown", f"Try again in **{remaining}s**."))
+        _rate_cd[uid] = time.time()
+        score = _seed(thing) // 10
+        bar   = "█" * score + "░" * (10 - score)
+        e = embed("⭐  Rating", f"**{thing}**\n\n`{bar}` **{score}/10**", C.TRIVIA,
+                  footer="Cooldown: 5 minutes")
         await ctx.send(embed=e)
-
-    # ── MOCK ──────────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="mock", description="SpOnGeBoB mOcK someone's text.")
     async def mock(self, ctx, *, text: str):
@@ -547,34 +467,22 @@ class Fun(commands.Cog):
         e = embed("🧽  mOcKeD", f"> {mocked}", C.SOCIAL)
         await ctx.send(embed=e)
 
-    # ── REVERSE ───────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="reverse", description="Reverse any text.")
-    async def reverse(self, ctx, *, text: str):
-        e = embed("🔄  Reversed", f"> {text[::-1]}", C.NEUTRAL)
-        await ctx.send(embed=e)
-
-    # ── CLAP ──────────────────────────────────────────────────────────────────
-
     @commands.hybrid_command(name="clap", description="👏 ADD 👏 CLAPS 👏 BETWEEN 👏 EVERY 👏 WORD")
     async def clap(self, ctx, *, text: str):
-        clapped = " 👏 ".join(text.split())
-        e = embed("👏  Clapped", f"{clapped}", C.SOCIAL)
+        e = embed("👏  Clapped", " 👏 ".join(text.split()), C.SOCIAL)
         await ctx.send(embed=e)
 
-    # ── UWUIFY ────────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="uwuify", description="Twansfowm text into UwU speak >w<")
-    async def uwuify(self, ctx, *, text: str):
+    @commands.hybrid_command(name="fandomify", description="Transform text into fandom/tumblr speech.")
+    async def fandomify(self, ctx, *, text: str):
         t = text.replace("r", "w").replace("l", "w").replace("R", "W").replace("L", "W")
         t = t.replace("na", "nya").replace("Na", "Nya").replace("no", "nyo").replace("No", "Nyo")
         t = t.replace("ne", "nye").replace("Ne", "Nye")
-        suffixes = [" uwu", " owo", " >w<", " :3", " nya~", ""]
-        t += random.choice(suffixes)
-        e = embed("🐱  UwUified", f"> {t}", C.MARRIAGE)
+        t = t.replace("th", "d").replace("Th", "D")
+        # Random fandom additions
+        additions = [" uwu", " owo", " >w<", " :3", " nya~", " ✨", " /lh", " /pos", ""]
+        t += random.choice(additions)
+        e = embed("✨  Fandomified", f"> {t}", C.MARRIAGE)
         await ctx.send(embed=e)
-
-    # ── EMOJIFY ───────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="emojify", description="Turn text into big letter emoji.")
     async def emojify(self, ctx, *, text: str):
@@ -588,35 +496,55 @@ class Fun(commands.Cog):
                 names = ["zero","one","two","three","four","five","six","seven","eight","nine"]
                 result += f":{names[int(ch)]}: "
         if len(result) > 500:
-            return await ctx.send(embed=error("Emojify", "Text is too long to emojify."))
+            return await ctx.send(embed=error("Emojify", "Text is too long."))
         e = embed("🔡  Emojified", result or "…", C.SOCIAL)
         await ctx.send(embed=e)
-
-    # ── GOOGLEIT ─────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="googleit", description="Generate a 'let me google that for you' link.")
-    async def googleit(self, ctx, *, query: str):
-        encoded = query.replace(" ", "+")
-        url     = f"https://letmegooglethat.com/?q={encoded}"
-        e = embed("🔍  Let Me Google That", f"[Click here to find out]({url})\n\n*{query}*", C.NEUTRAL)
-        await ctx.send(embed=e)
-
-    # ── FACT ──────────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="fact", description="Get a random interesting fact.")
     async def fact(self, ctx):
         e = embed("🧠  Random Fact", random.choice(FACTS), C.TRIVIA, footer="The more you know ✨")
         await ctx.send(embed=e)
 
-    # ── QUOTE ─────────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="quote", description="Get a random inspirational quote.")
+    @commands.hybrid_command(name="quote", description="Reply to a message to quote it, or just run to get a random famous quote.")
     async def quote(self, ctx):
-        text, author = random.choice(QUOTES)
-        e = embed("💬  Quote", f"*\"{text}\"*\n\n— **{author}**", C.TRIVIA)
-        await ctx.send(embed=e)
+        # If replying to a message, screenshot-style quote card
+        ref = ctx.message.reference
+        if ref and ref.resolved and isinstance(ref.resolved, discord.Message):
+            quoted_msg = ref.resolved
+            author     = quoted_msg.author
+            content    = quoted_msg.content or "[no text content]"
 
-    # ── ROAST ─────────────────────────────────────────────────────────────────
+            # Build a rich embed quote card
+            e = discord.Embed(
+                description=f"*\"{content}\"*",
+                color=C.TRIVIA,
+                timestamp=quoted_msg.created_at,
+            )
+            e.set_author(
+                name=author.display_name,
+                icon_url=author.display_avatar.url,
+            )
+            e.set_footer(text=f"Quoted by {ctx.author.display_name} · #{getattr(ctx.channel, 'name', 'unknown')}")
+            e.set_thumbnail(url=author.display_avatar.url)
+            await ctx.send(embed=e)
+        else:
+            # No reply — fallback to a classic list of real quotes
+            famous = [
+                ("The only way to do great work is to love what you do.", "Steve Jobs"),
+                ("It does not matter how slowly you go, as long as you do not stop.", "Confucius"),
+                ("Life is what happens when you're busy making other plans.", "John Lennon"),
+                ("In the middle of every difficulty lies opportunity.", "Albert Einstein"),
+                ("You miss 100% of the shots you don't take.", "Wayne Gretzky"),
+                ("Whether you think you can or you think you can't, you're right.", "Henry Ford"),
+                ("Be yourself; everyone else is already taken.", "Oscar Wilde"),
+                ("It always seems impossible until it is done.", "Nelson Mandela"),
+                ("Two things are infinite: the universe and human stupidity.", "Albert Einstein"),
+                ("The future belongs to those who believe in the beauty of their dreams.", "Eleanor Roosevelt"),
+            ]
+            text, attr = random.choice(famous)
+            e = embed("💬  Quote", f"*\"{text}\"*\n\n— **{attr}**", C.TRIVIA,
+                      footer="Tip: reply to a message and use /quote to quote that person")
+            await ctx.send(embed=e)
 
     @commands.hybrid_command(name="roast", description="Auto-roast a user.")
     async def roast(self, ctx, member: discord.Member = None):
@@ -626,74 +554,51 @@ class Fun(commands.Cog):
                   footer=f"Delivered by {ctx.author.display_name}")
         await ctx.send(embed=e)
 
-    # ── WOULD YOU RATHER ─────────────────────────────────────────────────────
-
     @commands.hybrid_command(name="wyr", description="Random would you rather question.")
     async def wyr(self, ctx):
-        e = embed("🤔  Would You Rather…", random.choice(WYR_QUESTIONS), C.GAMES,
-                  footer="React 🅰️ or 🅱️ in the server!")
-        msg = await ctx.send(embed=e)
-        await msg.add_reaction("🅰️")
-        await msg.add_reaction("🅱️")
-
-    # ── DARE ──────────────────────────────────────────────────────────────────
+        q    = random.choice(WYR_QUESTIONS)
+        view = WYRView()
+        e    = embed("🤔  Would You Rather…", q, C.GAMES, footer=f"Asked by {ctx.author.display_name}")
+        await ctx.send(embed=e, view=view)
 
     @commands.hybrid_command(name="dare", description="Get a random dare.")
     async def dare(self, ctx):
         e = embed("😈  Dare", random.choice(DARES), C.SOCIAL, footer="Do it. No cap.")
         await ctx.send(embed=e)
 
-    # ── NEVER HAVE I EVER ─────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="nhie", description="Random Never Have I Ever statement.")
+    @commands.hybrid_command(name="nhie", description="Never Have I Ever.")
     async def nhie(self, ctx):
-        e = embed("🙋  Never Have I Ever…", random.choice(NHIE), C.GAMES,
-                  footer="React ✅ if you have, ❌ if you haven't")
-        msg = await ctx.send(embed=e)
-        await msg.add_reaction("✅")
-        await msg.add_reaction("❌")
-
-    # ── TOPIC ─────────────────────────────────────────────────────────────────
+        view = NHIEView()
+        await ctx.send(embed=view.build_embed(), view=view)
 
     @commands.hybrid_command(name="topic", description="Random conversation starter.")
     async def topic(self, ctx):
         e = embed("💬  Conversation Starter", random.choice(TOPICS), C.TRIVIA)
         await ctx.send(embed=e)
 
-    # ── HUG ───────────────────────────────────────────────────────────────────
-
     @commands.hybrid_command(name="hug", description="Hug someone.")
     async def hug(self, ctx, member: discord.Member):
-        e = embed("🤗  Hug", f"{ctx.author.mention} gave {member.mention} a big hug! 🤗", C.MARRIAGE,
+        e = embed("🤗  Hug", f"{ctx.author.mention} gave {member.mention} a big hug!", C.MARRIAGE,
                   footer=f"{ctx.author.display_name} → {member.display_name}")
         gif = await fetch_gif("anime hug")
-        if gif:
-            e.set_image(url=gif)
+        if gif: e.set_image(url=gif)
         await ctx.send(embed=e)
-
-    # ── PAT ───────────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="pat", description="Pat someone on the head.")
     async def pat(self, ctx, member: discord.Member):
         e = embed("😊  Head Pat", f"{ctx.author.mention} patted {member.mention} on the head.", C.MARRIAGE,
                   footer=f"{ctx.author.display_name} → {member.display_name}")
         gif = await fetch_gif("anime head pat")
-        if gif:
-            e.set_image(url=gif)
+        if gif: e.set_image(url=gif)
         await ctx.send(embed=e)
 
-    # ── BONK ──────────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="bonk", description="Bonk someone. Go to horny jail.")
+    @commands.hybrid_command(name="bonk", description="Bonk someone. Go to jail.")
     async def bonk(self, ctx, member: discord.Member):
-        e = embed("🔨  BONK", f"{ctx.author.mention} bonked {member.mention}. Go to jail.", C.LOSE,
+        e = embed("🔨  BONK", f"{ctx.author.mention} bonked {member.mention}. Straight to jail.", C.LOSE,
                   footer=f"{ctx.author.display_name} → {member.display_name}")
         gif = await fetch_gif("anime bonk")
-        if gif:
-            e.set_image(url=gif)
+        if gif: e.set_image(url=gif)
         await ctx.send(embed=e)
-
-    # ── KILL ──────────────────────────────────────────────────────────────────
 
     @commands.hybrid_command(name="kill", description="Dramatically kill someone.")
     async def kill(self, ctx, member: discord.Member):
@@ -710,49 +615,44 @@ class Fun(commands.Cog):
                   footer=f"{ctx.author.display_name} → {member.display_name}")
         await ctx.send(embed=e)
 
-    # ── WORDCOUNT ─────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="wordcount", description="Count words and characters in text.")
-    async def wordcount(self, ctx, *, text: str):
-        words    = len(text.split())
-        chars    = len(text)
-        chars_ns = len(text.replace(" ", ""))
-        lines    = text.count("\n") + 1
-        e = embed("📝  Word Count", (
-            f"```\n"
-            f"Words       {words:>6,}\n"
-            f"Characters  {chars:>6,}\n"
-            f"No spaces   {chars_ns:>6,}\n"
-            f"Lines       {lines:>6,}\n"
-            f"```"
-        ), C.NEUTRAL)
-        await ctx.send(embed=e)
-
-    # ── CONFESSION ────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="confess", description="Send an anonymous confession to the server.")
+    @commands.hybrid_command(name="confess", description="Send a confession. Admins can see who sent it.")
     async def confess(self, ctx, *, confession: str):
-        # Try to delete the slash invocation (ephemeral isn't possible without deferring)
         try:
             await ctx.message.delete()
         except Exception:
             pass
-        target = ctx.channel
-        e = embed("🤫  Anonymous Confession", confession, C.NEUTRAL,
-                  footer="Submitted anonymously")
-        await target.send(embed=e)
+
+        # Public embed — anonymous
+        public_e = embed("🤫  Anonymous Confession", confession, C.NEUTRAL,
+                         footer="Submitted anonymously")
+        await ctx.channel.send(embed=public_e)
+
+        # DM confirmation to sender
         try:
-            await ctx.author.send(embed=embed("✅  Confession Sent", "Your confession was posted anonymously.", C.WIN))
+            await ctx.author.send(embed=embed("✅  Confession Sent",
+                                               "Your confession was posted. Only admins can see it was you.",
+                                               C.WIN))
         except Exception:
             pass
 
-    # ── ASCII ─────────────────────────────────────────────────────────────────
-
-    @commands.hybrid_command(name="ascii", description="Turn text into chunky ASCII-style text.")
-    async def ascii(self, ctx, *, text: str):
-        result = "  ".join(ASCII_FONT.get(c, c) for c in text.lower()[:20])
-        e = embed("🔠  ASCII Text", f"```\n{result}\n```", C.NEUTRAL)
-        await ctx.send(embed=e)
+        # DM to all admins in the guild
+        if ctx.guild:
+            admin_embed = embed(
+                "🔍  Confession (Admin View)",
+                f"**Confession:**\n{confession}\n\n"
+                f"**Sender:** {ctx.author.mention} (`{ctx.author}` · ID `{ctx.author.id}`)\n"
+                f"**Channel:** {ctx.channel.mention}",
+                C.WARN,
+                footer="This is only visible to admins.",
+            )
+            for member in ctx.guild.members:
+                if member.bot:
+                    continue
+                if member.guild_permissions.administrator:
+                    try:
+                        await member.send(embed=admin_embed)
+                    except Exception:
+                        pass
 
 
 async def setup(bot: commands.Bot):
