@@ -116,43 +116,46 @@ STOCK_LIQUIDITY = {
 
 # Fairer long-term market behaviour
 DEFAULT_STOCK_CONFIG = {
+    # Drift is near-zero so prices don't inflate automatically every tick.
+    # Volatility is halved so moves are more gradual.
+    # Fair value acts as a magnet — prices revert toward it over time.
     "Oreobux": {
         "price": 100,
         "fair_value": 100.0,
-        "volatility": 0.025,
-        "drift": 0.002,
+        "volatility": 0.012,   # was 0.025
+        "drift": 0.0001,       # was 0.002
         "liquidity": 1400,
         "history": [100],
     },
     "QMkoin": {
         "price": 150,
         "fair_value": 150.0,
-        "volatility": 0.035,
-        "drift": 0.003,
+        "volatility": 0.015,   # was 0.035
+        "drift": 0.0001,       # was 0.003
         "liquidity": 1200,
         "history": [150],
     },
     "Seelsterling": {
         "price": 200,
         "fair_value": 200.0,
-        "volatility": 0.020,
-        "drift": 0.0015,
+        "volatility": 0.010,   # was 0.020
+        "drift": 0.0001,       # was 0.0015
         "liquidity": 1800,
         "history": [200],
     },
     "Fwizfinance": {
         "price": 250,
         "fair_value": 250.0,
-        "volatility": 0.050,
-        "drift": 0.0035,
+        "volatility": 0.020,   # was 0.050
+        "drift": 0.0001,       # was 0.0035
         "liquidity": 900,
         "history": [250],
     },
     "BingBux": {
         "price": 120,
         "fair_value": 120.0,
-        "volatility": 0.030,
-        "drift": 0.002,
+        "volatility": 0.013,   # was 0.030
+        "drift": 0.0001,       # was 0.002
         "liquidity": 1300,
         "history": [120],
     },
@@ -166,8 +169,8 @@ DIVIDEND_YIELD = {
     "BingBux": 0.007,
 }
 
-MAX_NORMAL_MOVE = 0.08
-MAX_EVENT_MOVE = 0.18
+MAX_NORMAL_MOVE = 0.04   # was 0.08 — halved
+MAX_EVENT_MOVE  = 0.09   # was 0.18 — halved
 PRICE_FLOOR = 1
 
 # =========================
