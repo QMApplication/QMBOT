@@ -1,123 +1,265 @@
-# utils.py
-import io
-import re
-import zipfile
+import json
 from pathlib import Path
-from datetime import datetime, timezone
-from typing import Optional
-
-import discord
-from discord.ext import commands
-
+from typing import Any
+from config import DATA_DIR
 
 # =========================
-# Mentions / members
+# Data directory (Railway safe)
 # =========================
-def only_mention_target(ctx: commands.Context) -> Optional[int]:
-    """
-    Returns the mentioned user ID if exactly one user is mentioned.
-    Otherwise returns None.
-    """
-    mentions = getattr(ctx.message, "mentions", None) or []
-    if len(mentions) != 1:
-        return None
-    return mentions[0].id
 
+DATA_PATH = Path(DATA_DIR)
+DATA_PATH.mkdir(parents=True, exist_ok=True)
 
-async def get_member_safe(guild: discord.Guild, user_id: int) -> Optional[discord.Member]:
-    """
-    Try cache first, then fetch from API.
-    Returns None if the member cannot be found or fetched.
-    """
-    member = guild.get_member(user_id)
-    if member:
-        return member
+# =========================
+# File paths
+# =========================
+
+DATA_FILE = DATA_PATH / "data.json"
+COOLDOWN_FILE = DATA_PATH / "cooldowns.json"
+COIN_DATA_FILE = DATA_PATH / "coins.json"
+SHOP_FILE = DATA_PATH / "shop_stock.json"
+INVENTORY_FILE = DATA_PATH / "inventories.json"
+MARRIAGE_FILE = DATA_PATH / "marriages.json"
+PLAYLIST_FILE = DATA_PATH / "playlists.json"
+QUEST_FILE = DATA_PATH / "quests.json"
+EVENT_FILE = DATA_PATH / "events.json"
+STOCK_FILE = DATA_PATH / "stocks.json"
+SUGGESTION_FILE = DATA_PATH / "suggestions.json"
+
+TRIVIA_STATS_FILE = DATA_PATH / "trivia_stats.json"
+TRIVIA_STREAKS_FILE = DATA_PATH / "trivia_streaks.json"
+
+BEG_STATS_FILE = DATA_PATH / "beg_stats.json"
+
+SWEAR_JAR_FILE = DATA_PATH / "swear_jar.json"
+STICKER_FILE = DATA_PATH / "sticker.json"
+
+ACTIONS_FILE = DATA_PATH / "actions.json"
+
+# =========================
+# Core JSON helpers
+# =========================
+
+def _load_json(path: Path, default: Any):
+    if not path.exists():
+        return default
 
     try:
-        return await guild.fetch_member(user_id)
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-        return None
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
 
 
-# =========================
-# Time helpers
-# =========================
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def utc_day_key(dt: Optional[datetime] = None) -> str:
-    dt = dt or utc_now()
-    return dt.strftime("%Y-%m-%d")
-
-
-def fmt_hhmm(dt: datetime) -> str:
-    return dt.strftime("%H:%M")
-
-
-def human_delta(seconds: int) -> str:
-    seconds = max(0, int(seconds))
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
-
-    if h > 0:
-        return f"{h}h {m}m"
-    if m > 0:
-        return f"{m}m {s}s"
-    return f"{s}s"
-
-
-# =========================
-# Zip backup helpers (Railway-safe)
-# =========================
-def existing_files(paths: list[str]) -> list[str]:
-    out = []
-    for p in paths:
-        try:
-            path = Path(p)
-            if path.exists() and path.is_file():
-                out.append(str(path))
-        except Exception:
-            pass
-    return out
-
-
-def build_zip_bytes(
-    file_paths: list[str],
-    folder_name: str = "bot_backup"
-) -> tuple[io.BytesIO, list[str]]:
+def _save_json(path: Path, obj: Any):
     """
-    Build an in-memory zip containing the provided files.
-    Returns (buffer, included_files).
+    Atomic save so Railway crashes cannot corrupt files.
     """
-    included = existing_files(file_paths)
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for path_str in included:
-            path = Path(path_str)
-            arcname = f"{folder_name}/{path.name}"
-            zf.write(path, arcname=arcname)
+    temp = path.with_suffix(".tmp")
 
-    buf.seek(0)
-    return buf, included
+    with temp.open("w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=4)
+
+    temp.replace(path)
 
 
 # =========================
-# Regex helpers
+# Core bot data
 # =========================
-def compile_whole_word_regex(words: set[str]) -> re.Pattern:
-    """
-    Compile a case-insensitive whole-word regex from a set of words.
-    Longer words are matched first.
-    """
-    safe_words = {str(w).strip() for w in words if str(w).strip()}
-    if not safe_words:
-        # matches nothing
-        return re.compile(r"(?!x)x")
 
-    return re.compile(
-        r"\b(" + "|".join(map(re.escape, sorted(safe_words, key=len, reverse=True))) + r")\b",
-        re.IGNORECASE,
-    )
+def load_data():
+    return _load_json(DATA_FILE, {})
+
+def save_data(d):
+    _save_json(DATA_FILE, d)
+
+
+def load_cooldowns():
+    return _load_json(COOLDOWN_FILE, {})
+
+def save_cooldowns(d):
+    _save_json(COOLDOWN_FILE, d)
+
+
+# =========================
+# Economy
+# =========================
+
+def load_coins():
+    return _load_json(COIN_DATA_FILE, {})
+
+def save_coins(d):
+    _save_json(COIN_DATA_FILE, d)
+
+
+# =========================
+# Marriages
+# =========================
+
+def load_marriages():
+    return _load_json(MARRIAGE_FILE, {})
+
+def save_marriages(d):
+    _save_json(MARRIAGE_FILE, d)
+
+
+# =========================
+# Shop / inventory
+# =========================
+
+def load_shop_stock():
+    return _load_json(SHOP_FILE, {})
+
+def save_shop_stock(d):
+    _save_json(SHOP_FILE, d)
+
+
+def load_inventory():
+    return _load_json(INVENTORY_FILE, {})
+
+def save_inventory(d):
+    _save_json(INVENTORY_FILE, d)
+
+
+# =========================
+# Music / misc systems
+# =========================
+
+def load_playlists():
+    return _load_json(PLAYLIST_FILE, {})
+
+def save_playlists(d):
+    _save_json(PLAYLIST_FILE, d)
+
+
+def load_quests():
+    return _load_json(QUEST_FILE, {})
+
+def save_quests(d):
+    _save_json(QUEST_FILE, d)
+
+
+def load_event():
+    return _load_json(EVENT_FILE, {})
+
+def save_event(d):
+    _save_json(EVENT_FILE, d)
+
+
+# =========================
+# Stocks
+# =========================
+
+def load_stocks():
+    return _load_json(STOCK_FILE, {})
+
+def save_stocks(d):
+    _save_json(STOCK_FILE, d)
+
+
+# =========================
+# Suggestions
+# =========================
+
+def load_suggestions():
+    return _load_json(SUGGESTION_FILE, [])
+
+def save_suggestions(d):
+    _save_json(SUGGESTION_FILE, d)
+
+
+# =========================
+# Trivia
+# =========================
+
+def load_trivia_stats():
+    return _load_json(TRIVIA_STATS_FILE, {})
+
+def save_trivia_stats(d):
+    _save_json(TRIVIA_STATS_FILE, d)
+
+
+def load_trivia_streaks():
+    return _load_json(TRIVIA_STREAKS_FILE, {})
+
+def save_trivia_streaks(d):
+    _save_json(TRIVIA_STREAKS_FILE, d)
+
+
+# =========================
+# Beg stats
+# =========================
+
+def load_beg_stats():
+    return _load_json(BEG_STATS_FILE, {})
+
+def save_beg_stats(d):
+    _save_json(BEG_STATS_FILE, d)
+
+
+# =========================
+# Swear jar
+# =========================
+
+def load_swear_jar():
+
+    jar = _load_json(SWEAR_JAR_FILE, {"total": 0, "users": {}})
+
+    if not isinstance(jar, dict):
+        jar = {"total": 0, "users": {}}
+
+    jar.setdefault("total", 0)
+    jar.setdefault("users", {})
+
+    jar["total"] = int(jar.get("total", 0) or 0)
+
+    if not isinstance(jar["users"], dict):
+        jar["users"] = {}
+
+    return jar
+
+
+def save_swear_jar(d):
+    _save_json(SWEAR_JAR_FILE, d)
+
+
+# =========================
+# Sticker tracking
+# =========================
+
+def load_stickers():
+
+    data = _load_json(STICKER_FILE, {"total": 0, "users": {}, "daily": {}})
+
+    if not isinstance(data, dict):
+        data = {"total": 0, "users": {}, "daily": {}}
+
+    data.setdefault("total", 0)
+    data.setdefault("users", {})
+    data.setdefault("daily", {})
+
+    data["total"] = int(data.get("total", 0) or 0)
+
+    if not isinstance(data["users"], dict):
+        data["users"] = {}
+
+    if not isinstance(data["daily"], dict):
+        data["daily"] = {}
+
+    return data
+
+
+def save_stickers(d):
+    _save_json(STICKER_FILE, d)
+
+
+# =========================
+# Actions
+# =========================
+
+def load_actions():
+    return _load_json(ACTIONS_FILE, {})
+
+def save_actions(d):
+    _save_json(ACTIONS_FILE, d)
