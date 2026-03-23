@@ -24,6 +24,7 @@ INITIAL_EXTENSIONS = [
     "cogs.shop",
     "cogs.market",
     "cogs.swearjar",
+    "cogs.logs",
 ]
 
 
