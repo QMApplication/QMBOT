@@ -42,12 +42,21 @@ def render_card(card: str) -> list[str]:
     return ["┌─────┐", f"│{suit:<5}│", f"│ {mid} │", f"│{suit:>5}│", "└─────┘"]
 
 def render_hidden() -> list[str]:
-    return ["┌─────┐", "│░░░░░│", "│░ ? ░│", "│░░░░░│", "└─────┘"]
+    return ["┌─────┐", "│     │", "│  ♔  │", "│     │", "└─────┘"]
 
-def combine_cards(cards: list[str], hide_second: bool = False) -> str:
-    rendered = [render_card(c) if not (hide_second and i == 1) else render_hidden()
-                for i, c in enumerate(cards)]
-    return "\n".join("  ".join(r[row] for r in rendered) for row in range(5))
+def combine_cards(cards: list[str], hide_second: bool = False, per_row: int = 3) -> str:
+    rows = []
+    for i in range(0, len(cards), per_row):
+        chunk = cards[i:i + per_row]
+        rendered = []
+        for j, card in enumerate(chunk):
+            if hide_second and i == 0 and j == 1:
+                rendered.append(render_hidden())
+            else:
+                rendered.append(render_card(card))
+        lines = ["  ".join(r[row] for r in rendered) for row in range(5)]
+        rows.append("\n".join(lines))
+    return "\n\n".join(rows)
 
 
 # ─── Gamble View ──────────────────────────────────────────────────────────────
