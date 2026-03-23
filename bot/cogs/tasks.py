@@ -348,41 +348,48 @@ class BackgroundTasks(commands.Cog):
                 liquidity = max(1, int(stock.get("liquidity", 1200)))
 
                 flow = self.market_flow.get(stock_name, {"buy": 0, "sell": 0})
-                buys = int(flow.get("buy", 0))
+                buys  = int(flow.get("buy",  0))
                 sells = int(flow.get("sell", 0))
                 net_flow = buys - sells
 
-                pressure = max(-0.04, min(0.04, net_flow / liquidity))
-                reversion = ((fair_value - current_price) / max(fair_value, 1.0)) * 0.08
+                # Trade pressure: capped tighter so big buy waves don't rocket prices
+                pressure = max(-0.025, min(0.025, net_flow / max(liquidity, 1)))
+
+                # Mean-reversion: pulls price back toward fair_value each tick
+                # Stronger coefficient (0.15 vs 0.08) so it actually matters
+                reversion = ((fair_value - current_price) / max(fair_value, 1.0)) * 0.15
+
+                # Random noise scaled to volatility (already halved in config)
                 noise = random.uniform(-volatility, volatility)
 
+                # Events: rarer and smaller
+                # 1% chance of crash, 1% chance of boom (was 1.5% each)
                 event_move = 0.0
                 event_kind = None
                 roll = random.random()
-
-                if roll < 0.015:
-                    event_move = -random.uniform(0.08, 0.16)
+                if roll < 0.010:
+                    event_move = -random.uniform(0.04, 0.09)
                     event_kind = "crash"
-                elif roll > 0.985:
-                    event_move = random.uniform(0.08, 0.16)
+                elif roll > 0.990:
+                    event_move = random.uniform(0.04, 0.09)
                     event_kind = "boom"
 
+                # Combine — drift is now near-zero so no automatic inflation
                 pct_change = drift + reversion + pressure + noise + event_move
-                move_cap = MAX_EVENT_MOVE if event_kind else MAX_NORMAL_MOVE
+                move_cap   = MAX_EVENT_MOVE if event_kind else MAX_NORMAL_MOVE
                 pct_change = max(-move_cap, min(move_cap, pct_change))
 
                 new_price = max(PRICE_FLOOR, int(round(current_price * (1 + pct_change))))
 
-                fair_noise = random.uniform(-0.008, 0.012)
-                new_fair_value = max(
-                    float(PRICE_FLOOR),
-                    fair_value * (1 + drift + fair_noise)
-                )
+                # Fair value stays stable — only drifts very slightly with symmetric noise
+                # No upward bias (was fair_value * (1 + drift + fair_noise) which inflated it)
+                fair_noise    = random.uniform(-0.003, 0.003)
+                new_fair_value = max(float(PRICE_FLOOR), fair_value * (1 + fair_noise))
 
-                stock["price"] = new_price
+                stock["price"]      = new_price
                 stock["fair_value"] = round(new_fair_value, 2)
-                stock["history"] = (stock.get("history") or []) + [new_price]
-                stock["history"] = stock["history"][-48:]
+                stock["history"]    = (stock.get("history") or []) + [new_price]
+                stock["history"]    = stock["history"][-240:]   # keep more history for charts
 
                 stocks[stock_name] = stock
                 changed = True
